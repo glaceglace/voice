@@ -1,0 +1,43 @@
+@use '@angular/material' as mat;
+
+@include mat.core();
+
+$theme: mat.define-theme((
+  color: (
+    theme-type: dark,
+    primary: mat.$blue-palette,
+    tertiary: mat.$orange-palette,
+  ),
+));
+
+:root {
+  --editor-bg: #0f1117;
+  --panel-bg: #161b27;
+  --panel-bg2: #1e2332;
+  --border: #2a2f3e;
+  --accent: #1a73e8;
+  --accent-hover: #4a90e2;
+  --warn: #f44336;
+  --waveform: #1db954;
+  --text-primary: #e8eaed;
+  --text-muted: #9aa0ac;
+  --selection: rgba(255, 152, 0, 0.25);
+  --playhead: #ff5722;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: Roboto, 'Helvetica Neue', sans-serif;
+  background: var(--editor-bg);
+  color: var(--text-primary);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+/* thin dark scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; background: var(--editor-bg); }
+::-webkit-scrollbar-thumb { background: #3a4055; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #4a5068; }
+
+@include mat.all-component-themes($theme);
