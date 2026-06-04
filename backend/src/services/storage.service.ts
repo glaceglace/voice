@@ -13,6 +13,24 @@ const registry = new Map<string, FileMetadata>();
 export function initStorage(): void {
   fs.mkdirSync(SESSION_DIR, { recursive: true });
   fs.mkdirSync(EXPORTS_DIR, { recursive: true });
+
+  // Re-register files that survived a previous server instance so that
+  // a backend restart doesn't make already-imported clips unexportable.
+  for (const filename of fs.readdirSync(SESSION_DIR)) {
+    const filePath = path.join(SESSION_DIR, filename);
+    const fileId = filename.replace(/\.[^.]+$/, '');
+    if (!registry.has(fileId) && fs.statSync(filePath).isFile()) {
+      const stat = fs.statSync(filePath);
+      registry.set(fileId, {
+        fileId,
+        filePath,
+        originalName: filename,
+        createdAt: stat.mtimeMs,
+        lastAccessedAt: Date.now(),
+      });
+    }
+  }
+
   setInterval(purgeStaleFiles, PURGE_INTERVAL_MS);
 }
 

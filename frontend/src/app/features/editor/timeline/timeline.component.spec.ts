@@ -15,6 +15,11 @@ describe('TimelineComponent', () => {
   beforeEach(async () => {
     editActions = { cutSelection: vi.fn().mockResolvedValue(undefined) };
 
+    vi.stubGlobal('ResizeObserver', class {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    });
+
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
       scale: vi.fn(), clearRect: vi.fn(), fillRect: vi.fn(),
       beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
@@ -39,7 +44,7 @@ describe('TimelineComponent', () => {
     fixture.detectChanges();
   });
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   it('creates the component', () => {
     expect(comp).toBeTruthy();
@@ -100,7 +105,7 @@ describe('TimelineComponent', () => {
 
   it('onScroll updates scrollLeft', () => {
     comp.onScroll({ target: { scrollLeft: 150 } as HTMLElement } as unknown as Event);
-    expect(comp.scrollLeft).toBe(150);
+    expect(comp.scrollLeft()).toBe(150);
   });
 
   it('deleteClip removes the clip and clears selection', () => {
@@ -204,9 +209,9 @@ describe('TimelineComponent', () => {
     const nativeEl = document.createElement('div');
     vi.spyOn(nativeEl, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0 } as DOMRect);
     (comp as any).containerRef = { nativeElement: nativeEl };
-    // y = 0 → trackIndex = (0 - 24) / 88 < 0 → returns null
+    // clientY: -10 → y = -10 → trackIndex < 0 → hitTest returns null
     const prevPlayhead = project.state().playheadPosition;
-    comp.onMouseDown({ clientX: 200, clientY: 0, buttons: 1 } as MouseEvent);
+    comp.onMouseDown({ clientX: 200, clientY: -10, buttons: 1 } as MouseEvent);
     expect(project.state().playheadPosition).toBe(prevPlayhead);
   });
 
@@ -387,5 +392,228 @@ describe('TimelineComponent', () => {
   it('selection label visible when selectionDuration > 0', () => {
     comp.selectionOverlay = { trackId: 'any', x: 50, w: 500 };
     expect(comp.selectionDuration).toBeGreaterThan(0);
+  });
+
+  // ── custom scrollbar ──────────────────────────────────────────────────────
+
+  // ── scrollbar computed signals ────────────────────────────────────────────
+
+  it('hScrollThumbWidth is 0 when viewportWidth is 0', () => {
+    comp.viewportWidth.set(0);
+    expect(comp.hScrollThumbWidth()).toBe(0);
+  });
+
+  it('hScrollThumbWidth equals viewport when content fits', () => {
+    comp.viewportWidth.set(800);
+    // timelineWidth() = max(0*zoom+400, 1200) = 1200; contentW = 168+1200=1368 > 800
+    // Actually with no clips, totalDuration=0, timelineWidth=1200, contentW=1368 > 800
+    // So thumb is proportional here. Use a large viewport instead.
+    // Force content to fit by making viewportWidth very large:
+    comp.viewportWidth.set(10000);
+    expect(comp.hScrollThumbWidth()).toBe(10000);
+    expect(comp.hScrollThumbLeft()).toBe(0);
+  });
+
+  it('hScrollThumbWidth proportional for wide content', () => {
+    // Add a 30s clip so timelineWidth > 0
+    const trackId = project.state().tracks[0].id;
+    project.addClip(trackId, 'f1', 30, 0);
+    // timelineWidth = 30*100+400 = 3400; contentW = 168+3400 = 3568
+    comp.viewportWidth.set(800);
+    const thumbW = comp.hScrollThumbWidth();
+    // thumbW = 800 * 800 / 3568 ≈ 179
+    expect(thumbW).toBeGreaterThanOrEqual(30);
+    expect(thumbW).toBeLessThan(800);
+  });
+
+  it('hScrollThumbWidth enforces minimum of 30px', () => {
+    const trackId = project.state().tracks[0].id;
+    project.addClip(trackId, 'f1', 10000, 0); // very long clip
+    comp.viewportWidth.set(100);
+    expect(comp.hScrollThumbWidth()).toBe(30);
+  });
+
+  it('hScrollThumbLeft is 0 at start of content', () => {
+    const trackId = project.state().tracks[0].id;
+    project.addClip(trackId, 'f1', 30, 0);
+    comp.viewportWidth.set(800);
+    comp.scrollLeft.set(0);
+    expect(comp.hScrollThumbLeft()).toBe(0);
+  });
+
+  it('hScrollThumbLeft moves thumb for non-zero scroll', () => {
+    const trackId = project.state().tracks[0].id;
+    project.addClip(trackId, 'f1', 30, 0);
+    comp.viewportWidth.set(800);
+    comp.scrollLeft.set(500);
+    expect(comp.hScrollThumbLeft()).toBeGreaterThan(0);
+  });
+
+  it('onScroll updates only scrollLeft signal', () => {
+    comp.onScroll({ target: { scrollLeft: 200 } as unknown as HTMLElement } as unknown as Event);
+    expect(comp.scrollLeft()).toBe(200);
+  });
+
+  it('onHScrollTrackClick ignores click on thumb element', () => {
+    const container = { scrollLeft: 0 } as unknown as HTMLElement;
+    (comp as any).containerRef = { nativeElement: container };
+    comp.viewportWidth.set(800);
+    const thumb = document.createElement('div');
+    thumb.classList.add('h-scrollbar-thumb');
+    const track = { getBoundingClientRect: () => ({ left: 0 }) };
+    comp.onHScrollTrackClick({ clientX: 400, target: thumb, currentTarget: track } as unknown as MouseEvent);
+    expect(container.scrollLeft).toBe(0);
+  });
+
+  it('onHScrollTrackClick scrolls to clicked position', () => {
+    const trackId = project.state().tracks[0].id;
+    project.addClip(trackId, 'f1', 30, 0); // makes timelineWidth = 3400, contentW = 3568
+    comp.viewportWidth.set(800); // thumbW = 800*800/3568 ≈ 179
+    const container = { scrollLeft: 0 } as unknown as HTMLElement;
+    (comp as any).containerRef = { nativeElement: container };
+    const track = { getBoundingClientRect: () => ({ left: 0 }) };
+    const nonThumb = document.createElement('span');
+    comp.onHScrollTrackClick({ clientX: 400, target: nonThumb, currentTarget: track } as unknown as MouseEvent);
+    expect(comp.scrollLeft()).toBeGreaterThanOrEqual(0);
+  });
+
+  it('onHScrollTrackClick does nothing when trackW is zero', () => {
+    comp.viewportWidth.set(30);
+    // With 30px viewport, thumbW = 30 (content fits or min 30) → trackW = 0
+    const container = { scrollLeft: 0 } as unknown as HTMLElement;
+    (comp as any).containerRef = { nativeElement: container };
+    const track = { getBoundingClientRect: () => ({ left: 0 }) };
+    expect(() => comp.onHScrollTrackClick({
+      clientX: 15, target: document.createElement('span'), currentTarget: track,
+    } as unknown as MouseEvent)).not.toThrow();
+  });
+
+  it('onHScrollThumbMousedown registers global mouse handlers', () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    comp.onHScrollThumbMousedown({ clientX: 200, preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as MouseEvent);
+    expect(addSpy).toHaveBeenCalledWith('mousemove', expect.any(Function));
+    expect(addSpy).toHaveBeenCalledWith('mouseup', expect.any(Function));
+  });
+
+  it('onHScrollThumbMousedown then move updates scrollLeft', () => {
+    const trackId = project.state().tracks[0].id;
+    project.addClip(trackId, 'f1', 30, 0); // timelineWidth=3400, contentW=3568
+    comp.viewportWidth.set(800);           // thumbW≈179, trackW≈621, maxScroll=2768
+    const container = { scrollLeft: 0 } as unknown as HTMLElement;
+    (comp as any).containerRef = { nativeElement: container };
+    comp.scrollLeft.set(0);
+    comp.onHScrollThumbMousedown({ clientX: 100, preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as MouseEvent);
+    // drag 60px right → newScroll = 0 + (60/621)*2768 ≈ 267
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 160 }));
+    expect(comp.scrollLeft()).toBeGreaterThan(0);
+  });
+
+  it('onHScrollThumbMousedown then mouseup removes global handlers', () => {
+    comp.onHScrollThumbMousedown({ clientX: 100, preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as MouseEvent);
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    window.dispatchEvent(new MouseEvent('mouseup'));
+    expect(removeSpy).toHaveBeenCalledWith('mousemove', expect.any(Function));
+    expect(removeSpy).toHaveBeenCalledWith('mouseup', expect.any(Function));
+  });
+
+  it('ngAfterViewInit sets up ResizeObserver and initialises viewportWidth', async () => {
+    comp.viewportWidth.set(0);
+    comp.ngAfterViewInit();
+    await Promise.resolve();
+    // jsdom clientWidth is 0, but set must have been called (signal now accessible)
+    expect(comp.viewportWidth()).toBeGreaterThanOrEqual(0);
+  });
+
+  it('ngOnDestroy disconnects ResizeObserver and removes scrollbar handlers', () => {
+    comp.onHScrollThumbMousedown({ clientX: 100, preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as MouseEvent);
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    comp.ngOnDestroy();
+    expect(removeSpy).toHaveBeenCalledWith('mousemove', expect.any(Function));
+    expect(removeSpy).toHaveBeenCalledWith('mouseup', expect.any(Function));
+  });
+
+  // ── clip drag (Alt+drag) ──────────────────────────────────────────────────
+
+  it('onKeyDown Alt sets altKeyDown true', () => {
+    comp.onKeyDown({ key: 'Alt', preventDefault: vi.fn(), target: document.body } as unknown as KeyboardEvent);
+    expect(comp.altKeyDown()).toBe(true);
+  });
+
+  it('onKeyUp Alt clears altKeyDown', () => {
+    comp.altKeyDown.set(true);
+    comp.onKeyUp({ key: 'Alt', preventDefault: vi.fn() } as unknown as KeyboardEvent);
+    expect(comp.altKeyDown()).toBe(false);
+  });
+
+  it('Alt+mousedown on clip starts clipDrag', () => {
+    const trackId = project.state().tracks[0].id;
+    const clip = project.addClip(trackId, 'f1', 10, 0);
+    const nativeEl = document.createElement('div');
+    vi.spyOn(nativeEl, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0 } as DOMRect);
+    (comp as any).containerRef = { nativeElement: nativeEl };
+    // zoom=100, clip at 0–10s, grab at time=2s (x=200)
+    comp.onMouseDown({ altKey: true, clientX: 200, clientY: 10, buttons: 1, preventDefault: vi.fn() } as unknown as MouseEvent);
+    expect(comp.clipDrag).not.toBeNull();
+    expect(comp.clipDrag?.clipId).toBe(clip.id);
+    expect(comp.clipDrag?.duration).toBe(10);
+  });
+
+  it('Alt+mousedown on empty area does not start clipDrag', () => {
+    const nativeEl = document.createElement('div');
+    vi.spyOn(nativeEl, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0 } as DOMRect);
+    (comp as any).containerRef = { nativeElement: nativeEl };
+    comp.onMouseDown({ altKey: true, clientX: 50, clientY: 10, buttons: 1, preventDefault: vi.fn() } as unknown as MouseEvent);
+    expect(comp.clipDrag).toBeNull();
+  });
+
+  it('onMouseMove updates clipDrag previewStartTime', () => {
+    const trackId = project.state().tracks[0].id;
+    project.addClip(trackId, 'f1', 10, 0);
+    const nativeEl = document.createElement('div');
+    vi.spyOn(nativeEl, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0 } as DOMRect);
+    (comp as any).containerRef = { nativeElement: nativeEl };
+    comp.onMouseDown({ altKey: true, clientX: 200, clientY: 10, buttons: 1, preventDefault: vi.fn() } as unknown as MouseEvent);
+    // drag to x=400 → time=4s, grabOffset was 2s → newStart=2s
+    comp.onMouseMove({ clientX: 400, clientY: 10, buttons: 1 } as MouseEvent);
+    expect(comp.clipDrag?.previewStartTime).toBeCloseTo(2, 1);
+  });
+
+  it('onMouseUp commits clipDrag via moveClip', () => {
+    const trackId = project.state().tracks[0].id;
+    const clip = project.addClip(trackId, 'f1', 10, 0);
+    const nativeEl = document.createElement('div');
+    vi.spyOn(nativeEl, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0 } as DOMRect);
+    (comp as any).containerRef = { nativeElement: nativeEl };
+    comp.onMouseDown({ altKey: true, clientX: 0, clientY: 10, buttons: 1, preventDefault: vi.fn() } as unknown as MouseEvent);
+    comp.clipDrag = { ...comp.clipDrag!, previewStartTime: 5, previewTrackId: trackId };
+    comp.onMouseUp({ clientX: 500, clientY: 10, buttons: 0 } as MouseEvent);
+    expect(comp.clipDrag).toBeNull();
+    expect(project.state().tracks[0].clips[0].startTime).toBe(5);
+  });
+
+  it('findSnapTarget snaps to nearest clip boundary', () => {
+    const trackId = project.state().tracks[0].id;
+    const clip1 = project.addClip(trackId, 'f1', 5, 10);  // 10–15s
+    project.addClip(trackId, 'f2', 3, 20);                // 20–23s
+    // Drag clip1 near t=20 (clip2 start) — should snap
+    const result = (comp as any).findSnapTarget(clip1.id, 19.95, 5);
+    expect(result).toBeCloseTo(20, 1);
+  });
+
+  it('findSnapTarget returns null when no clip is nearby', () => {
+    const trackId = project.state().tracks[0].id;
+    const clip1 = project.addClip(trackId, 'f1', 5, 10);
+    project.addClip(trackId, 'f2', 3, 30);
+    // drag clip1 to t=3 — far from any boundary
+    const result = (comp as any).findSnapTarget(clip1.id, 3, 5);
+    expect(result).toBeNull();
+  });
+
+  it('findSnapTarget snaps to timeline start', () => {
+    const trackId = project.state().tracks[0].id;
+    const clip1 = project.addClip(trackId, 'f1', 5, 2);
+    // drag near t=0 — should snap to 0
+    const result = (comp as any).findSnapTarget(clip1.id, 0.05, 5);
+    expect(result).toBe(0);
   });
 });

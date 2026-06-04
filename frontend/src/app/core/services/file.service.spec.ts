@@ -169,25 +169,25 @@ describe('FileService', () => {
     await expect(svc.importFile(file)).rejects.toThrow('Unsupported format');
   });
 
-  // --- peakResolution ---
-  it('fetchPeaks uses resolution 500 for zoom < 50', async () => {
-    project.setZoom(30);
+  // --- peakResolution: resolution = clamp(ceil(zoom * duration), 200, 10000) ---
+  it('fetchPeaks resolution is clamped to 200 minimum (short clip at low zoom)', async () => {
+    project.setZoom(30); // 30 * 3s = 90px → clamped to 200
     const file = new File(['x'], 'audio.wav');
     await svc.importFile(file);
-    expect(api.getPeaks).toHaveBeenCalledWith('fid1', 500);
+    expect(api.getPeaks).toHaveBeenCalledWith('fid1', 200);
   });
 
-  it('fetchPeaks uses resolution 2000 for zoom 50-199', async () => {
-    project.setZoom(100);
+  it('fetchPeaks resolution scales with zoom * duration', async () => {
+    project.setZoom(100); // 100 * 3s = 300px
     const file = new File(['x'], 'audio.wav');
     await svc.importFile(file);
-    expect(api.getPeaks).toHaveBeenCalledWith('fid1', 2000);
+    expect(api.getPeaks).toHaveBeenCalledWith('fid1', 300);
   });
 
-  it('fetchPeaks uses resolution 8000 for zoom >= 200', async () => {
-    project.setZoom(200);
+  it('fetchPeaks resolution scales correctly at high zoom', async () => {
+    project.setZoom(200); // 200 * 3s = 600px
     const file = new File(['x'], 'audio.wav');
     await svc.importFile(file);
-    expect(api.getPeaks).toHaveBeenCalledWith('fid1', 8000);
+    expect(api.getPeaks).toHaveBeenCalledWith('fid1', 600);
   });
 });

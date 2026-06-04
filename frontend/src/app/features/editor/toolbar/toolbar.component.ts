@@ -81,10 +81,6 @@ import { take } from 'rxjs/operators';
 
       <!-- file group -->
       <div class="btn-group">
-        <button mat-icon-button matTooltip="Import audio file" (click)="importFile()">
-          <mat-icon>upload_file</mat-icon>
-        </button>
-
         <button mat-icon-button matTooltip="Export audio" (click)="exportOpen.emit()">
           <mat-icon>save_alt</mat-icon>
         </button>
@@ -92,7 +88,21 @@ import { take } from 'rxjs/operators';
         <button mat-icon-button matTooltip="Add track" (click)="project.addTrack()">
           <mat-icon>library_add</mat-icon>
         </button>
+
+        <button mat-icon-button class="new-project-btn" matTooltip="New project — discard all changes" (click)="newProject()">
+          <mat-icon>delete_forever</mat-icon>
+        </button>
       </div>
+
+      <mat-divider vertical class="divider" />
+
+      <!-- snap toggle -->
+      <button mat-icon-button
+        [class.snap-active]="project.snapEnabled()"
+        [matTooltip]="project.snapEnabled() ? 'Snap enabled — click to disable' : 'Snap disabled — click to enable'"
+        (click)="project.toggleSnap()">
+        <mat-icon>{{ project.snapEnabled() ? 'grid_on' : 'grid_off' }}</mat-icon>
+      </button>
 
       <mat-divider vertical class="divider" />
 
@@ -169,9 +179,12 @@ import { take } from 'rxjs/operators';
       text-align: center;
     }
 
+    .snap-active mat-icon { color: var(--accent); }
+
     .play-btn mat-icon { color: #4caf50; }
     .rec-btn mat-icon { color: #f44336; }
     .rec-active mat-icon { color: #f44336; animation: pulse 0.8s infinite; }
+    .new-project-btn mat-icon { color: #f44336; }
 
     @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }
 
@@ -265,18 +278,11 @@ export class ToolbarComponent {
     return this.editActions.cutSelection();
   }
 
-  importFile(): void {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.mp3,.wav,.aac,.flac,.ogg,.m4a,.mp4,.webm';
-    input.onchange = (e) => void this.onFileSelected(e);
-    input.click();
+  newProject(): void {
+    if (window.confirm('Discard all work and start a new project?')) {
+      this.playback.stop();
+      this.project.reset();
+    }
   }
 
-  async onFileSelected(e: Event): Promise<void> {
-    const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    await this.fileService.importFile(file);
-  }
 }

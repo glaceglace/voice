@@ -113,7 +113,9 @@ export class ExportDialogComponent {
       const a = document.createElement('a');
       a.href = url;
       a.download = `voice-export.${this.format}`;
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 2000);
       this.dialogRef.close('exported');
     } catch (err) {
@@ -124,6 +126,7 @@ export class ExportDialogComponent {
 
   private waitForProgress(jobId: string): Promise<void> {
     return new Promise((resolve, reject) => {
+      let completed = false;
       const es = new EventSource(`${environment.apiBase}/audio/export/progress/${jobId}`);
       es.onmessage = (e: MessageEvent) => {
         const data = JSON.parse(e.data as string) as { progress: number; status: string };
@@ -131,17 +134,21 @@ export class ExportDialogComponent {
         this.statusText = data.status === 'done'
           ? 'Done!'
           : `Processing… ${data.progress}%`;
-        if (data.progress >= 100 || data.status === 'done') {
+        if (data.status === 'done') {
+          completed = true;
           es.close();
           resolve();
         } else if (data.status === 'error') {
+          completed = true;
           es.close();
           reject(new Error('Export failed on server'));
         }
       };
       es.onerror = () => {
-        es.close();
-        reject(new Error('Lost connection to server during export'));
+        if (!completed) {
+          es.close();
+          reject(new Error('Lost connection to server during export'));
+        }
       };
     });
   }

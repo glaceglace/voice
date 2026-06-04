@@ -1,5 +1,6 @@
 import {
-  Component, ElementRef, HostListener, OnDestroy, OnInit, ViewChild, computed, inject
+  AfterViewInit, Component, ElementRef, HostListener, OnDestroy, OnInit,
+  ViewChild, computed, effect, inject, signal
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
@@ -12,8 +13,17 @@ import { TrackHeaderComponent } from '../track-header/track-header.component';
 import { ContextMenuComponent, type ContextMenuItem } from '../context-menu/context-menu.component';
 import type { Clip } from '../../../core/models/project.model';
 
-const TRACK_HEIGHT = 128;
-const HEADER_WIDTH = 168;
+interface ClipDragState {
+  clipId: string;
+  sourceTrackId: string;
+  duration: number;
+  grabOffsetTime: number;
+  previewStartTime: number;
+  previewTrackId: string;
+  snapIndicatorX: number | null;
+}
+
+const SNAP_PX = 12;
 
 export const TRACK_COLORS = [
   '#1a73e8', '#e8710a', '#0f9d58', '#d93025', '#9334e6', '#00796b',
@@ -25,7 +35,20 @@ export const TRACK_COLORS = [
   standalone: true,
   imports: [CommonModule, MatIconModule, TimelineRulerComponent, WaveformCanvasComponent, TrackHeaderComponent, ContextMenuComponent],
   template: `
+    <!-- ruler lives outside the scroll container so it never moves with content -->
+    <div class="ruler-row">
+      <div class="header-spacer" #headerSpacer></div>
+      <div class="ruler-wrap">
+        <app-timeline-ruler
+          [zoom]="project.state().zoom"
+          [scrollLeft]="scrollLeft()"
+          [totalDuration]="project.totalDuration()"
+        />
+      </div>
+    </div>
+
     <div class="timeline-root" #container
+      [class.alt-active]="altKeyDown()"
       (scroll)="onScroll($event)"
       (mousedown)="onMouseDown($event)"
       (mousemove)="onMouseMove($event)"
@@ -35,21 +58,10 @@ export const TRACK_COLORS = [
       (dragover)="$event.preventDefault()"
       (drop)="onDrop($event)"
     >
-      <!-- sticky ruler row -->
-      <div class="ruler-row" #rulerRow>
-        <div class="header-spacer"></div>
-        <div class="ruler-wrap">
-          <app-timeline-ruler
-            [zoom]="project.state().zoom"
-            [scrollLeft]="scrollLeft"
-            [totalDuration]="project.totalDuration()"
-          />
-        </div>
-      </div>
 
       <!-- track rows -->
       @for (track of project.state().tracks; track track.id; let i = $index) {
-        <div class="track-row" [style.height.px]="TRACK_HEIGHT">
+        <div class="track-row" [style.min-width.px]="headerWidth() + timelineWidth()">
 
           <!-- sticky track header -->
           <div class="track-header-wrap">
@@ -72,6 +84,7 @@ export const TRACK_COLORS = [
             @for (clip of track.clips; track clip.id) {
               <div class="clip-block"
                 [class.selected]="isSelected(clip)"
+                [class.is-dragging]="clipDrag?.clipId === clip.id"
                 [style.left.px]="clip.startTime * project.state().zoom"
                 [style.width.px]="clip.duration * project.state().zoom"
                 [style.--track-color]="trackColor(i)"
@@ -84,7 +97,22 @@ export const TRACK_COLORS = [
                 />
                 <div class="clip-label">{{ clipLabel(clip) }}</div>
                 <button class="clip-delete-btn" (click)="deleteClip($event, clip.id)" title="Delete clip">×</button>
+                @if (altKeyDown()) {
+                  <div class="alt-drag-hint"><mat-icon>open_with</mat-icon></div>
+                }
               </div>
+            }
+
+            <!-- clip drag ghost -->
+            @if (clipDrag && clipDrag.previewTrackId === track.id) {
+              <div class="clip-drag-ghost"
+                [style.left.px]="clipDrag.previewStartTime * project.state().zoom"
+                [style.width.px]="clipDrag.duration * project.state().zoom"
+                [style.--track-color]="trackColor(i)"
+              ></div>
+              @if (clipDrag.snapIndicatorX !== null) {
+                <div class="snap-indicator" [style.left.px]="clipDrag.snapIndicatorX"></div>
+              }
             }
 
             <!-- selection overlay -->
@@ -113,7 +141,16 @@ export const TRACK_COLORS = [
       }
 
       <!-- playhead line -->
-      <div class="playhead" [style.left.px]="HEADER_WIDTH + playheadPx()"></div>
+      <div class="playhead" [style.left.px]="headerWidth() + playheadPx()"></div>
+    </div>
+
+    <!-- custom horizontal scrollbar (outside the scroll container so it never affects layout) -->
+    <div class="h-scrollbar" (mousedown)="onHScrollTrackClick($event)">
+      <div class="h-scrollbar-thumb"
+        [style.width.px]="hScrollThumbWidth()"
+        [style.left.px]="hScrollThumbLeft()"
+        (mousedown)="onHScrollThumbMousedown($event)"
+      ></div>
     </div>
 
     <!-- context menu -->
@@ -126,43 +163,60 @@ export const TRACK_COLORS = [
     }
   `,
   styles: [`
-    :host { display: block; height: 100%; }
+    :host {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      position: relative;
+    }
 
     .timeline-root {
+      flex: 1;
+      min-height: 0;
       position: relative;
-      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      overflow-x: scroll;
+      overflow-y: auto;
       background: var(--editor-bg);
-      height: 100%;
       cursor: default;
       user-select: none;
+      /* hide native horizontal scrollbar (replaced by custom); show styled vertical */
+      &::-webkit-scrollbar { width: 6px; height: 0; }
+      &::-webkit-scrollbar-thumb { background: #3a4055; border-radius: 3px; }
+      &::-webkit-scrollbar-thumb:hover { background: #4a5068; }
+      scrollbar-color: #3a4055 transparent;
+      scrollbar-width: thin;
     }
 
     /* ── ruler ── */
     .ruler-row {
       display: flex;
-      position: sticky;
-      top: 0;
-      z-index: 20;
+      flex-shrink: 0;
       background: var(--panel-bg);
       border-bottom: 1px solid var(--border);
+      z-index: 20;
     }
     .header-spacer {
-      width: ${HEADER_WIDTH}px;
-      min-width: ${HEADER_WIDTH}px;
+      width: clamp(140px, 13vw, 220px);
+      min-width: clamp(140px, 13vw, 220px);
       flex-shrink: 0;
+      background: var(--panel-bg);
     }
     .ruler-wrap { flex: 1; overflow: hidden; }
 
     /* ── track rows ── */
     .track-row {
       display: flex;
+      flex: 1;
+      min-height: 12%;
       border-bottom: 1px solid var(--border);
       &:hover .clips-area { background: rgba(255,255,255,0.01); }
     }
 
     .track-header-wrap {
-      width: ${HEADER_WIDTH}px;
-      min-width: ${HEADER_WIDTH}px;
+      width: clamp(140px, 13vw, 220px);
+      min-width: clamp(140px, 13vw, 220px);
       flex-shrink: 0;
       position: sticky;
       left: 0;
@@ -198,12 +252,72 @@ export const TRACK_COLORS = [
       border-radius: 4px;
       overflow: hidden;
       cursor: pointer;
-      transition: border-color 0.1s;
+      /* box-shadow hover instead of border-width change — avoids layout reflow */
+      transition: box-shadow 0.1s;
 
-      &:hover { border-width: 2px; }
+      &:hover { box-shadow: 0 0 0 1px var(--track-color, #1a73e8); }
       &.selected {
         border-color: #ff9800;
         box-shadow: 0 0 0 1px rgba(255,152,0,0.4);
+      }
+      &.is-dragging { opacity: 0.35; }
+    }
+
+    /* Alt-hold cursor & move hint */
+    .alt-active .clip-block { cursor: grab; }
+    .alt-active .clip-block:active { cursor: grabbing; }
+
+    .alt-drag-hint {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.45);
+      border-radius: 50%;
+      width: 26px;
+      height: 26px;
+      mat-icon {
+        font-size: 16px;
+        width: 16px;
+        height: 16px;
+        color: rgba(255,255,255,0.9);
+      }
+    }
+
+    /* Drag ghost (target position preview) */
+    .clip-drag-ghost {
+      position: absolute;
+      top: 4px;
+      height: calc(100% - 8px);
+      border: 2px dashed var(--track-color, #1a73e8);
+      border-radius: 4px;
+      background: rgba(26, 115, 232, 0.18);
+      pointer-events: none;
+      z-index: 15;
+    }
+
+    /* Snap indicator — vertical line at snap target */
+    .snap-indicator {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--accent);
+      pointer-events: none;
+      z-index: 20;
+      &::before {
+        content: '';
+        position: absolute;
+        top: -5px;
+        left: -4px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--accent);
       }
     }
 
@@ -274,12 +388,12 @@ export const TRACK_COLORS = [
 
     /* ── full empty state ── */
     .full-empty {
+      flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 8px;
-      padding: 48px 0;
       color: var(--text-muted);
       font-size: 14px;
       p { margin: 0; }
@@ -307,20 +421,45 @@ export const TRACK_COLORS = [
         border-top: 8px solid var(--playhead);
       }
     }
+
+    /* ── custom horizontal scrollbar ── */
+    .h-scrollbar {
+      flex-shrink: 0;
+      height: clamp(12px, 1.8vh, 20px);
+      background: var(--panel-bg);
+      border-top: 1px solid var(--border);
+      position: relative;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .h-scrollbar-thumb {
+      position: absolute;
+      top: 3px;
+      bottom: 3px;
+      min-width: 30px;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.28);
+      cursor: grab;
+      transition: background 0.1s;
+      &:hover { background: rgba(255,255,255,0.44); }
+      &:active { cursor: grabbing; background: rgba(255,255,255,0.60); }
+    }
   `],
 })
-export class TimelineComponent implements OnInit, OnDestroy {
+export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('container') containerRef!: ElementRef<HTMLDivElement>;
+  @ViewChild('headerSpacer') headerSpacerRef!: ElementRef<HTMLDivElement>;
 
   readonly project = inject(ProjectService);
   private editActions = inject(EditActionsService);
   private fileService = inject(FileService);
 
-  readonly TRACK_HEIGHT = TRACK_HEIGHT;
-  readonly HEADER_WIDTH = HEADER_WIDTH;
-
-  scrollLeft = 0;
+  readonly scrollLeft = signal(0);
+  readonly headerWidth = signal(168);
+  readonly altKeyDown = signal(false);
   selectionOverlay: { trackId: string; x: number; w: number } | null = null;
+  clipDrag: ClipDragState | null = null;
 
   contextMenuVisible = false;
   contextMenuPosition = { x: 0, y: 0 };
@@ -328,16 +467,56 @@ export class TimelineComponent implements OnInit, OnDestroy {
 
   amplitudeScales: Record<string, number> = {};
 
+  // Viewport width fed by ResizeObserver — drives the scrollbar computeds.
+  readonly viewportWidth = signal(0);
+  private resizeObserver?: ResizeObserver;
+
+  readonly hScrollThumbWidth = computed(() => {
+    const viewW = this.viewportWidth();
+    const contentW = this.headerWidth() + this.timelineWidth();
+    if (viewW <= 0 || contentW <= viewW) return Math.max(viewW, 0);
+    return Math.max(30, viewW * viewW / contentW);
+  });
+
+  readonly hScrollThumbLeft = computed(() => {
+    const viewW = this.viewportWidth();
+    const contentW = this.headerWidth() + this.timelineWidth();
+    if (viewW <= 0 || contentW <= viewW) return 0;
+    const thumbW = this.hScrollThumbWidth();
+    const maxScroll = contentW - viewW;
+    return Math.max(0, Math.min((this.scrollLeft() / maxScroll) * (viewW - thumbW), viewW - thumbW));
+  });
+
+  private hThumbDragStartX = 0;
+  private hThumbDragStartScroll = 0;
+  private readonly hThumbOnMove = (e: MouseEvent) => this.onHThumbMove(e);
+  private readonly hThumbOnUp = () => this.onHThumbUp();
+
   private selectStart: { x: number; trackId: string; timeStart: number } | null = null;
   private handleDragSide: 'start' | 'end' | null = null;
   private rafId: number | null = null;
+
+  private readonly autoScrollEffect = effect(() => {
+    if (!this.project.state().isPlaying) return;
+    const container = this.containerRef?.nativeElement;
+    if (!container) return;
+    const playheadAbs = this.project.state().playheadPosition * this.project.state().zoom;
+    const viewWidth = container.clientWidth - this.headerWidth();
+    const sl = container.scrollLeft;
+    if (playheadAbs - sl > viewWidth - 80) {
+      container.scrollLeft = playheadAbs - viewWidth * 0.3;
+      this.scrollLeft.set(container.scrollLeft);
+    }
+  });
 
   readonly timelineWidth = computed(() =>
     Math.max(this.project.totalDuration() * this.project.state().zoom + 400, 1200)
   );
 
+  // Content-coordinate position of the playhead (no scroll subtraction — the
+  // container's own scroll already shifts absolute children in the viewport).
   readonly playheadPx = computed(() =>
-    this.project.state().playheadPosition * this.project.state().zoom - this.scrollLeft
+    this.project.state().playheadPosition * this.project.state().zoom
   );
 
   readonly allEmpty = computed(() =>
@@ -365,23 +544,119 @@ export class TimelineComponent implements OnInit, OnDestroy {
     this.rafId = requestAnimationFrame(this.noop.bind(this));
   }
 
+  ngAfterViewInit(): void {
+    const container = this.containerRef.nativeElement;
+    const spacer = this.headerSpacerRef.nativeElement;
+    this.resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target === container) this.viewportWidth.set(container.clientWidth);
+        if (entry.target === spacer) this.headerWidth.set(spacer.offsetWidth);
+      }
+    });
+    this.resizeObserver.observe(container);
+    this.resizeObserver.observe(spacer);
+    // Microtask defers past dev-mode double-check so setting signals
+    // on the first frame doesn't trigger NG0100.
+    Promise.resolve().then(() => {
+      this.viewportWidth.set(container.clientWidth);
+      this.headerWidth.set(spacer.offsetWidth);
+    });
+  }
+
   ngOnDestroy(): void {
+    this.resizeObserver?.disconnect();
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
+    window.removeEventListener('mousemove', this.hThumbOnMove);
+    window.removeEventListener('mouseup', this.hThumbOnUp);
   }
 
   onScroll(e: Event): void {
-    this.scrollLeft = (e.target as HTMLElement).scrollLeft;
+    this.scrollLeft.set((e.target as HTMLElement).scrollLeft);
+  }
+
+  onHScrollTrackClick(e: MouseEvent): void {
+    if ((e.target as HTMLElement).classList.contains('h-scrollbar-thumb')) return;
+    const container = this.containerRef?.nativeElement;
+    if (!container) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const viewW = this.viewportWidth();
+    const contentW = this.headerWidth() + this.timelineWidth();
+    const thumbW = this.hScrollThumbWidth();
+    const trackW = viewW - thumbW;
+    if (trackW <= 0) return;
+    const clickX = e.clientX - rect.left;
+    const ratio = Math.max(0, Math.min(1, (clickX - thumbW / 2) / trackW));
+    container.scrollLeft = ratio * (contentW - viewW);
+    this.scrollLeft.set(container.scrollLeft);
+  }
+
+  onHScrollThumbMousedown(e: MouseEvent): void {
+    e.preventDefault();
+    e.stopPropagation();
+    this.hThumbDragStartX = e.clientX;
+    this.hThumbDragStartScroll = this.scrollLeft();
+    window.addEventListener('mousemove', this.hThumbOnMove);
+    window.addEventListener('mouseup', this.hThumbOnUp);
+  }
+
+  private onHThumbMove(e: MouseEvent): void {
+    const container = this.containerRef?.nativeElement;
+    if (!container) return;
+    const viewW = this.viewportWidth();
+    const contentW = this.headerWidth() + this.timelineWidth();
+    const thumbW = this.hScrollThumbWidth();
+    const trackW = viewW - thumbW;
+    if (trackW <= 0) return;
+    const dx = e.clientX - this.hThumbDragStartX;
+    const maxScroll = contentW - viewW;
+    const newScroll = this.hThumbDragStartScroll + (dx / trackW) * maxScroll;
+    container.scrollLeft = Math.max(0, Math.min(newScroll, maxScroll));
+    this.scrollLeft.set(container.scrollLeft);
+  }
+
+  private onHThumbUp(): void {
+    window.removeEventListener('mousemove', this.hThumbOnMove);
+    window.removeEventListener('mouseup', this.hThumbOnUp);
   }
 
   onMouseDown(e: MouseEvent): void {
+    if (e.altKey) {
+      const { trackId, time } = this.hitTest(e);
+      if (trackId) {
+        const clipId = this.clipAt(trackId, time);
+        if (clipId) {
+          const clip = this.project.getClipById(clipId);
+          if (clip) {
+            this.clipDrag = {
+              clipId,
+              sourceTrackId: trackId,
+              duration: clip.duration,
+              grabOffsetTime: time - clip.startTime,
+              previewStartTime: clip.startTime,
+              previewTrackId: trackId,
+              snapIndicatorX: null,
+            };
+            e.preventDefault();
+          }
+        }
+      }
+      return;
+    }
+
     const { trackId, time } = this.hitTest(e);
     if (!trackId) return;
 
+    this.project.setPlayhead(time);
+
     const clipId = this.clipAt(trackId, time);
     if (clipId) {
+      const sel = this.project.state().selection;
+      if (sel && !(sel.clipId === clipId && time >= sel.start && time <= sel.end)) {
+        this.project.setSelection(null);
+        this.selectionOverlay = null;
+      }
       this.selectStart = { x: time * this.project.state().zoom, trackId, timeStart: time };
     } else {
-      this.project.setPlayhead(time);
       this.project.setSelection(null);
       this.selectionOverlay = null;
     }
@@ -393,8 +668,30 @@ export class TimelineComponent implements OnInit, OnDestroy {
       return;
     }
 
+    if (this.clipDrag) {
+      const { trackId, time } = this.hitTest(e);
+      let newStart = Math.max(0, time - this.clipDrag.grabOffsetTime);
+      let snapX: number | null = null;
+      if (this.project.snapEnabled()) {
+        const snapped = this.findSnapTarget(this.clipDrag.clipId, newStart, this.clipDrag.duration);
+        if (snapped !== null) {
+          newStart = snapped;
+          snapX = snapped * this.project.state().zoom;
+        }
+      }
+      this.clipDrag = {
+        ...this.clipDrag,
+        previewStartTime: newStart,
+        previewTrackId: trackId ?? this.clipDrag.previewTrackId,
+        snapIndicatorX: snapX,
+      };
+      return;
+    }
+
+    const { time } = this.hitTest(e);
+
     if (this.handleDragSide) {
-      const { time } = this.hitTest(e);
+      // Handle-resize drag: update selection boundaries only (playhead does not follow)
       const sel = this.project.state().selection;
       if (!sel || !this.selectionOverlay) { this.handleDragSide = null; return; }
       const zoom = this.project.state().zoom;
@@ -411,20 +708,37 @@ export class TimelineComponent implements OnInit, OnDestroy {
       return;
     }
 
-    if (!this.selectStart) return;
-    const { time } = this.hitTest(e);
-    const zoom = this.project.state().zoom;
-    const x0 = this.selectStart.timeStart * zoom;
-    const x1 = time * zoom;
-    this.selectionOverlay = {
-      trackId: this.selectStart.trackId,
-      x: Math.min(x0, x1),
-      w: Math.abs(x1 - x0),
-    };
+    if (this.selectStart) {
+      // Selection drag: update overlay only — no setPlayhead to avoid signal churn on every mousemove
+      const zoom = this.project.state().zoom;
+      const x0 = this.selectStart.timeStart * zoom;
+      const x1 = time * zoom;
+      this.selectionOverlay = {
+        trackId: this.selectStart.trackId,
+        x: Math.min(x0, x1),
+        w: Math.abs(x1 - x0),
+      };
+      return;
+    }
+
+    // Free drag on empty area: navigator follows the mouse
+    this.project.setPlayhead(time);
   }
 
   onMouseUp(e: MouseEvent): void {
     this.handleDragSide = null;
+
+    if (this.clipDrag) {
+      const { clipId, sourceTrackId, previewTrackId, previewStartTime } = this.clipDrag;
+      this.clipDrag = null;
+      if (previewTrackId === sourceTrackId) {
+        this.project.moveClip(clipId, previewStartTime);
+      } else {
+        this.project.moveClipToTrack(clipId, previewTrackId, previewStartTime);
+      }
+      return;
+    }
+
     if (this.selectStart) {
       const { time } = this.hitTest(e);
       if (Math.abs(time - this.selectStart.timeStart) > 0.05) {
@@ -468,8 +782,21 @@ export class TimelineComponent implements OnInit, OnDestroy {
     (e.target as HTMLElement).dispatchEvent(event);
   }
 
+  @HostListener('window:keyup', ['$event'])
+  onKeyUp(e: KeyboardEvent): void {
+    if (e.key === 'Alt') {
+      e.preventDefault(); // belt-and-suspenders: stops Firefox menu on keyup too
+      this.altKeyDown.set(false);
+    }
+  }
+
   @HostListener('window:keydown', ['$event'])
   onKeyDown(e: KeyboardEvent): void {
+    if (e.key === 'Alt') {
+      e.preventDefault(); // tell the browser Alt is consumed → suppresses menu bar in Firefox/Edge
+      this.altKeyDown.set(true);
+      return;
+    }
     if ((e.target as HTMLElement)?.closest('input, textarea')) return;
 
     if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -621,14 +948,49 @@ export class TimelineComponent implements OnInit, OnDestroy {
     const container = this.containerRef?.nativeElement;
     if (!container) return { trackId: null, time: 0 };
     const rect = container.getBoundingClientRect();
-    const x = e.clientX - rect.left + this.scrollLeft - HEADER_WIDTH;
+    const x = e.clientX - rect.left + this.scrollLeft() - this.headerWidth();
     const y = e.clientY - rect.top + container.scrollTop;
     const time = Math.max(0, x / this.project.state().zoom);
-    const rulerH = 24;
-    const trackIndex = Math.floor((y - rulerH) / TRACK_HEIGHT);
+    const trackIndex = Math.floor(y / this.getTrackHeight());
     const tracks = this.project.state().tracks;
     if (trackIndex < 0 || trackIndex >= tracks.length) return { trackId: null, time };
     return { trackId: tracks[trackIndex].id, time };
+  }
+
+  private getTrackHeight(): number {
+    const row = this.containerRef.nativeElement.querySelector<HTMLElement>(':scope > .track-row');
+    return row ? row.getBoundingClientRect().height : 120;
+  }
+
+  findSnapTarget(draggingClipId: string, startTime: number, duration: number): number | null {
+    const snapThreshold = SNAP_PX / this.project.state().zoom;
+    let bestDelta = snapThreshold;
+    let snapTo: number | null = null;
+
+    const check = (candidate: number) => {
+      const d = Math.abs(startTime - candidate);
+      if (d < bestDelta) { bestDelta = d; snapTo = candidate; }
+    };
+    const checkEnd = (candidate: number) => {
+      const d = Math.abs((startTime + duration) - candidate);
+      if (d < bestDelta) { bestDelta = d; snapTo = candidate - duration; }
+    };
+
+    // Snap to timeline start
+    check(0);
+
+    for (const track of this.project.state().tracks) {
+      for (const clip of track.clips) {
+        if (clip.id === draggingClipId) continue;
+        const clipEnd = clip.startTime + clip.duration;
+        check(clip.startTime);
+        check(clipEnd);
+        checkEnd(clip.startTime);
+        checkEnd(clipEnd);
+      }
+    }
+
+    return snapTo !== null ? Math.max(0, snapTo) : null;
   }
 
   private clipAt(trackId: string, time: number): string | null {

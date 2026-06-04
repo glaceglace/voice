@@ -2,17 +2,25 @@ import { TestBed } from '@angular/core/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { TrackHeaderComponent } from './track-header.component';
 import { ProjectService } from '../../../core/services/project.service';
+import { FileService } from '../../../core/services/file.service';
 
 describe('TrackHeaderComponent', () => {
   let project: ProjectService;
+  let fileService: { importFile: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
+    fileService = { importFile: vi.fn().mockResolvedValue(undefined) };
     await TestBed.configureTestingModule({
       imports: [TrackHeaderComponent],
-      providers: [provideAnimationsAsync()],
+      providers: [
+        provideAnimationsAsync(),
+        { provide: FileService, useValue: fileService },
+      ],
     }).compileComponents();
     project = TestBed.inject(ProjectService);
   });
+
+  afterEach(() => vi.restoreAllMocks());
 
   function createComponent() {
     const fixture = TestBed.createComponent(TrackHeaderComponent);
@@ -31,7 +39,6 @@ describe('TrackHeaderComponent', () => {
 
   it('toggleMute mutes and unmutes the track', () => {
     const { comp } = createComponent();
-    const trackId = project.state().tracks[0].id;
     comp.toggleMute();
     expect(project.state().tracks[0].muted).toBe(true);
     comp.track = { ...comp.track, muted: true };
@@ -48,12 +55,22 @@ describe('TrackHeaderComponent', () => {
     expect(project.state().tracks[0].solo).toBe(false);
   });
 
-  it('deleteTrack removes the track', () => {
+  it('deleteTrack removes the track when confirmed', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
     project.addTrack();
     const { comp } = createComponent();
     comp.track = project.state().tracks[0];
     comp.deleteTrack();
     expect(project.state().tracks).toHaveLength(1);
+  });
+
+  it('deleteTrack does nothing when cancelled', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    project.addTrack();
+    const { comp } = createComponent();
+    comp.track = project.state().tracks[0];
+    comp.deleteTrack();
+    expect(project.state().tracks).toHaveLength(2);
   });
 
   it('setVolume updates track volume', () => {
@@ -69,7 +86,6 @@ describe('TrackHeaderComponent', () => {
     const comp = fixture.componentInstance;
     comp.track = project.state().tracks[0];
     fixture.detectChanges();
-    // Template branch: track.muted ? 'Unmute' : 'Mute'
     expect(comp.track.muted).toBe(true);
   });
 
@@ -93,14 +109,50 @@ describe('TrackHeaderComponent', () => {
     expect(project.state().tracks[0].solo).toBe(true);
   });
 
-  it('clicking delete button calls deleteTrack via DOM', () => {
-    project.addTrack(); // so removing track 0 leaves track 1
+  it('importFile opens a file picker for this track', () => {
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+    const { comp } = createComponent();
+    comp.importFile();
+    expect(clickSpy).toHaveBeenCalled();
+  });
+
+  it('importFile passes selected file to fileService with the track id', async () => {
+    const file = new File(['x'], 'audio.wav');
+    const { comp } = createComponent();
+    const trackId = project.state().tracks[0].id;
+
+    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
+      Object.defineProperty(this, 'files', { value: [file] });
+      this.onchange!(new Event('change'));
+    });
+
+    comp.importFile();
+    await Promise.resolve();
+    expect(fileService.importFile).toHaveBeenCalledWith(file, trackId);
+  });
+
+  it('importFile does nothing when no file selected', async () => {
+    const { comp } = createComponent();
+    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (this: HTMLInputElement) {
+      Object.defineProperty(this, 'files', { value: [] });
+      this.onchange!(new Event('change'));
+    });
+
+    comp.importFile();
+    await Promise.resolve();
+    expect(fileService.importFile).not.toHaveBeenCalled();
+  });
+
+  it('clicking delete button shows confirm and removes when confirmed', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    project.addTrack();
     const { fixture, comp } = createComponent();
     comp.track = project.state().tracks[0];
     fixture.detectChanges();
     const buttons = fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLElement>;
-    if (buttons.length >= 3) {
-      buttons[2].click();
+    // button order: mute(0), solo(1), import(2), delete(3)
+    if (buttons.length >= 4) {
+      buttons[3].click();
       fixture.detectChanges();
     }
     expect(project.state().tracks.length).toBeLessThanOrEqual(2);

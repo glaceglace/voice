@@ -6,6 +6,11 @@ describe('WaveformCanvasComponent', () => {
   let ctx2d: Record<string, ReturnType<typeof vi.fn> | string | number>;
 
   beforeEach(async () => {
+    vi.stubGlobal('ResizeObserver', class {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    });
+
     ctx2d = {
       scale: vi.fn(),
       clearRect: vi.fn(),
@@ -30,7 +35,7 @@ describe('WaveformCanvasComponent', () => {
     }).compileComponents();
   });
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   it('creates without error', () => {
     const fixture = TestBed.createComponent(WaveformCanvasComponent);

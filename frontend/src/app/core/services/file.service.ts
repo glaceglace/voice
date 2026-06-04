@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, effect } from '@angular/core';
 import { MatDialog } from '@angular/material/dialog';
 import { firstValueFrom } from 'rxjs';
 import { ApiService } from './api.service';
@@ -11,11 +11,22 @@ const ALLOWED_EXTS = new Set(['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a', '
 
 @Injectable({ providedIn: 'root' })
 export class FileService {
+  private lastTier = 0;
+
   constructor(
     private api: ApiService,
     private project: ProjectService,
     private dialog: MatDialog,
-  ) {}
+  ) {
+    this.lastTier = this.zoomTier(this.project.state().zoom);
+    effect(() => {
+      const tier = this.zoomTier(this.project.state().zoom);
+      if (tier !== this.lastTier) {
+        this.lastTier = tier;
+        void this.refreshAllPeaks();
+      }
+    });
+  }
 
   async importFile(file: File, targetTrackId?: string): Promise<void> {
     const ext = this.ext(file.name);
@@ -70,10 +81,29 @@ export class FileService {
     this.project.setClipPeaks(clipId, data.peaks);
   }
 
-  private peakResolution(zoom: number, _duration: number): number {
-    if (zoom < 50) return 500;
-    if (zoom < 200) return 2000;
-    return 8000;
+  private async refreshAllPeaks(): Promise<void> {
+    const zoom = this.project.state().zoom;
+    const clips = this.project.state().tracks.flatMap(t => t.clips);
+    await Promise.all(
+      clips.map(async (clip) => {
+        const resolution = this.peakResolution(zoom, clip.duration);
+        const data = await firstValueFrom(this.api.getPeaks(clip.sourceFileId, resolution));
+        this.project.setClipPeaks(clip.id, data.peaks);
+      }),
+    );
+  }
+
+  private peakResolution(zoom: number, duration: number): number {
+    // Request ~1 peak per pixel so each pixel column has its own min/max bar.
+    // Cap at 10 000 to avoid excessively large responses for very long clips.
+    const pixelWidth = zoom * Math.max(duration, 1);
+    return Math.min(Math.max(Math.ceil(pixelWidth), 200), 10000);
+  }
+
+  private zoomTier(zoom: number): number {
+    if (zoom < 50) return 0;
+    if (zoom < 200) return 1;
+    return 2;
   }
 
   private ext(name: string): string {

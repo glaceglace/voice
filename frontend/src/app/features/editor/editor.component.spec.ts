@@ -21,6 +21,11 @@ describe('EditorComponent', () => {
   let recorderState: WritableSignal<string>;
 
   beforeEach(async () => {
+    vi.stubGlobal('ResizeObserver', class {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    });
+
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
       scale: vi.fn(), clearRect: vi.fn(), fillRect: vi.fn(),
       beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
@@ -68,7 +73,7 @@ describe('EditorComponent', () => {
     fixture.detectChanges();
   });
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   it('creates the component', () => {
     expect(comp).toBeTruthy();

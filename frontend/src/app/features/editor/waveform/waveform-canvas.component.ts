@@ -1,12 +1,13 @@
-import { Component, ElementRef, Input, OnChanges, SimpleChanges, ViewChild } from '@angular/core';
+import { Component, ElementRef, Input, OnChanges, OnDestroy, OnInit, SimpleChanges, ViewChild } from '@angular/core';
 import type { PeakSample } from '../../../core/models/project.model';
 
 @Component({
   selector: 'app-waveform-canvas',
   standalone: true,
+  styles: [`:host { display: block; width: 100%; height: 100%; }`],
   template: `<canvas #canvas style="width:100%;height:100%;display:block;"></canvas>`,
 })
-export class WaveformCanvasComponent implements OnChanges {
+export class WaveformCanvasComponent implements OnChanges, OnInit, OnDestroy {
   @ViewChild('canvas', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
 
   @Input() peaks: PeakSample[] | null = null;
@@ -14,15 +15,25 @@ export class WaveformCanvasComponent implements OnChanges {
   @Input() loading = false;
   @Input() amplitudeScale = 1.0;
 
+  private resizeObserver!: ResizeObserver;
+
+  ngOnInit(): void {
+    this.resizeObserver = new ResizeObserver(() => this.draw());
+    this.resizeObserver.observe(this.canvasRef.nativeElement);
+  }
+
+  ngOnDestroy(): void {
+    this.resizeObserver?.disconnect();
+  }
+
   ngOnChanges(_changes: SimpleChanges): void {
     this.draw();
   }
 
   private draw(): void {
     const canvas = this.canvasRef.nativeElement;
-    const parent = canvas.parentElement!;
-    const w = Math.max(parent.clientWidth || 200, 2);
-    const h = Math.max(parent.clientHeight || 60, 2);
+    const w = Math.max(canvas.offsetWidth || 200, 2);
+    const h = Math.max(canvas.offsetHeight || 60, 2);
     const dpr = devicePixelRatio;
     canvas.width = w * dpr;
     canvas.height = h * dpr;

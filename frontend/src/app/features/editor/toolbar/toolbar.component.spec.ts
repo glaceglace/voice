@@ -162,27 +162,6 @@ describe('ToolbarComponent', () => {
     expect(emitted).toBe(true);
   });
 
-  it('importFile creates input and triggers click', () => {
-    const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
-    comp.importFile();
-    expect(clickSpy).toHaveBeenCalled();
-  });
-
-  it('onFileSelected imports the file', async () => {
-    const file = new File(['x'], 'audio.wav');
-    const input = document.createElement('input');
-    Object.defineProperty(input, 'files', { value: [file] });
-    await comp.onFileSelected({ target: input } as unknown as Event);
-    expect(fileService.importFile).toHaveBeenCalledWith(file);
-  });
-
-  it('onFileSelected does nothing when no file', async () => {
-    const input = document.createElement('input');
-    Object.defineProperty(input, 'files', { value: [] });
-    await comp.onFileSelected({ target: input } as unknown as Event);
-    expect(fileService.importFile).not.toHaveBeenCalled();
-  });
-
   it('startRecording handles recording callback and calls importBlob', async () => {
     const blob = new Blob(['audio'], { type: 'audio/webm' });
     // Make recorded$ pipe return an observable that emits immediately
@@ -318,18 +297,53 @@ describe('ToolbarComponent', () => {
     expect(project.state().zoom).toBeGreaterThanOrEqual(before);
   });
 
-  it('clicking import button calls importFile', () => {
-    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
-    const buttons = fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLElement>;
-    const importBtn = Array.from(buttons).find(b => b.textContent?.includes('upload_file'));
-    if (importBtn) { importBtn.click(); fixture.detectChanges(); }
-    // importFile creates an input and clicks it
-    expect(HTMLInputElement.prototype.click).toHaveBeenCalled();
+  it('newProject resets project when confirmed', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    project.addTrack();
+    comp.newProject();
+    expect(project.state().tracks).toHaveLength(1);
+    expect(project.canUndo()).toBe(false);
   });
+
+  it('newProject does nothing when cancelled', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    project.addTrack();
+    comp.newProject();
+    expect(project.state().tracks).toHaveLength(2);
+  });
+
+  it('newProject stops playback before resetting', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    comp.newProject();
+    expect(playback.stop).toHaveBeenCalled();
+  });
+
+  it('snap toggle button calls project.toggleSnap', () => {
+    const toggleSpy = vi.spyOn(project, 'toggleSnap');
+    const el = fixture.nativeElement as HTMLElement;
+    // Find the snap toggle button by its grid_on icon
+    const btn = Array.from(el.querySelectorAll('button')).find(b => b.textContent?.includes('grid_'));
+    expect(btn).toBeTruthy();
+    btn?.click();
+    expect(toggleSpy).toHaveBeenCalled();
+  });
+
+  it('snap toggle shows grid_on when enabled and grid_off when disabled', () => {
+    const el = fixture.nativeElement as HTMLElement;
+    const iconEl = () => el.querySelector('mat-icon[data-snap]') ??
+      Array.from(el.querySelectorAll('mat-icon')).find(i => i.textContent?.includes('grid_'));
+    expect(iconEl()?.textContent?.trim()).toBe('grid_on');
+    project.toggleSnap();
+    fixture.detectChanges();
+    expect(iconEl()?.textContent?.trim()).toBe('grid_off');
+  });
+
 });
 
 describe('ToolbarComponent (while playing)', () => {
   it('renders Pause tooltip when isPlaying is true', async () => {
+    TestBed.resetTestingModule();
+
     const { signal } = await import('@angular/core');
     const recorderState = signal('idle');
     const isPlayingMock = vi.fn().mockReturnValue(true);

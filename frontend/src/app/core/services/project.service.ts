@@ -1,14 +1,28 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, effect, signal, computed } from '@angular/core';
 import { v4 as uuidv4 } from 'uuid';
 import type { ProjectState, Track, Clip, SelectionRange, PeakSample } from '../models/project.model';
 import { defaultProjectState } from '../models/project.model';
 
 const MAX_HISTORY = 50;
+const STORAGE_KEY = 'voice-editor-project';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectService {
-  private _state = signal<ProjectState>(defaultProjectState());
+  private _state = signal<ProjectState>(this.loadFromStorage() ?? defaultProjectState());
   private _history: ProjectState[] = [];
+  private _saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  readonly snapEnabled = signal(true);
+  toggleSnap(): void { this.snapEnabled.update(v => !v); }
+
+  constructor() {
+    // Persist on every state change, debounced so rapid mutations don't thrash storage.
+    effect(() => {
+      const state = this._state();
+      if (this._saveTimer !== null) clearTimeout(this._saveTimer);
+      this._saveTimer = setTimeout(() => this.persist(state), 300);
+    });
+  }
 
   readonly state = this._state.asReadonly();
 
@@ -132,6 +146,25 @@ export class ProjectService {
     }));
   }
 
+  moveClipToTrack(clipId: string, newTrackId: string, newStartTime: number): void {
+    this.mutate(s => {
+      let movedClip: Clip | null = null;
+      const withoutClip = s.tracks.map(t => {
+        const idx = t.clips.findIndex(c => c.id === clipId);
+        if (idx === -1) return t;
+        movedClip = { ...t.clips[idx], startTime: Math.max(0, newStartTime), trackId: newTrackId };
+        return { ...t, clips: t.clips.filter(c => c.id !== clipId) };
+      });
+      if (!movedClip) return s;
+      return {
+        ...s,
+        tracks: withoutClip.map(t =>
+          t.id === newTrackId ? { ...t, clips: [...t.clips, movedClip!] } : t
+        ),
+      };
+    });
+  }
+
   // --- playback/transport ---
 
   setPlayhead(position: number): void {
@@ -163,6 +196,29 @@ export class ProjectService {
 
   canUndo(): boolean {
     return this._history.length > 0;
+  }
+
+  reset(): void {
+    this._history = [];
+    this._state.set(defaultProjectState());
+    try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+  }
+
+  // --- persistence ---
+
+  private loadFromStorage(): ProjectState | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? (JSON.parse(raw) as ProjectState) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private persist(state: ProjectState): void {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch { /* quota exceeded or private browsing */ }
   }
 
   // --- helpers ---

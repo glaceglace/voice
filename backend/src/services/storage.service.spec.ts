@@ -10,6 +10,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockFs.mkdirSync.mockReturnValue(undefined as unknown as string);
   mockFs.unlinkSync.mockReturnValue(undefined);
+  mockFs.readdirSync.mockReturnValue([] as unknown as ReturnType<typeof fs.readdirSync>);
+  mockFs.statSync.mockReturnValue({ isFile: () => true, mtimeMs: Date.now() } as unknown as ReturnType<typeof fs.statSync>);
   // reset registry
   storage.cleanupAllFiles();
   jest.useFakeTimers();

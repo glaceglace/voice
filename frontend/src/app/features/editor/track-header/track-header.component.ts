@@ -4,6 +4,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ProjectService } from '../../../core/services/project.service';
+import { FileService } from '../../../core/services/file.service';
 import type { Track } from '../../../core/models/project.model';
 
 @Component({
@@ -27,6 +28,11 @@ import type { Track } from '../../../core/models/project.model';
             (click)="toggleSolo()"
             matTooltip="Solo">
             <mat-icon>headphones</mat-icon>
+          </button>
+          <button mat-icon-button class="ctrl-btn import-btn"
+            (click)="importFile()"
+            matTooltip="Import audio file">
+            <mat-icon>upload_file</mat-icon>
           </button>
           <button mat-icon-button class="ctrl-btn delete-btn"
             (click)="deleteTrack()"
@@ -53,7 +59,6 @@ import type { Track } from '../../../core/models/project.model';
     .track-header {
       display: flex;
       height: 100%;
-      min-height: 128px;
       background: var(--panel-bg);
     }
 
@@ -68,8 +73,9 @@ import type { Track } from '../../../core/models/project.model';
       display: flex;
       flex-direction: column;
       justify-content: center;
-      padding: 6px 8px 4px 6px;
+      padding: 6px 8px 4px 4px;
       gap: 2px;
+      overflow: hidden;
     }
 
     .track-name {
@@ -84,26 +90,20 @@ import type { Track } from '../../../core/models/project.model';
     .controls {
       display: flex;
       gap: 0;
-      margin-left: -6px;
     }
 
     .ctrl-btn {
-      width: 28px !important;
-      height: 28px !important;
-      line-height: 28px !important;
-      mat-icon {
-        font-size: 16px !important;
-        width: 16px !important;
-        height: 16px !important;
-        color: var(--text-muted);
-      }
+      --mdc-icon-button-state-layer-size: 32px;
+      --mdc-icon-button-icon-size: 18px;
+      mat-icon { color: var(--text-muted); }
     }
 
     .ctrl-btn.muted mat-icon { color: #ff9800; }
     .ctrl-btn.solo mat-icon { color: #4caf50; }
-    .delete-btn { opacity: 0; transition: opacity 0.15s; }
+    .import-btn mat-icon { color: var(--accent); }
+    .delete-btn { opacity: 0.3; transition: opacity 0.15s; }
     .track-header:hover .delete-btn { opacity: 1; }
-    .delete-btn mat-icon { color: #f44336 !important; }
+    .delete-btn mat-icon { color: #f44336; }
 
     .volume-row, .gain-row {
       display: flex;
@@ -112,15 +112,17 @@ import type { Track } from '../../../core/models/project.model';
     }
 
     .vol-icon {
-      font-size: 14px !important;
-      width: 14px !important;
-      height: 14px !important;
+      font-size: 14px;
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
       color: var(--text-muted);
     }
 
     .vol-slider {
       flex: 1;
-      height: 20px !important;
+      --mat-slider-active-track-height: 2px;
+      --mat-slider-inactive-track-height: 2px;
     }
   `],
 })
@@ -135,11 +137,27 @@ export class TrackHeaderComponent {
   amplitudeScale = 1;
 
   private project = inject(ProjectService);
+  private fileService = inject(FileService);
 
   toggleMute(): void { this.project.setTrackMute(this.track.id, !this.track.muted); }
   toggleSolo(): void { this.project.setTrackSolo(this.track.id, !this.track.solo); }
   setVolume(value: number): void { this.project.setTrackVolume(this.track.id, value); }
-  deleteTrack(): void { this.project.removeTrack(this.track.id); }
+  deleteTrack(): void {
+    if (window.confirm(`Delete "${this.track.name}"?`)) {
+      this.project.removeTrack(this.track.id);
+    }
+  }
+
+  importFile(): void {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.mp3,.wav,.aac,.flac,.ogg,.m4a,.mp4,.webm';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (file) void this.fileService.importFile(file, this.track.id);
+    };
+    input.click();
+  }
 
   onAmplitudeScale(value: number): void {
     this.amplitudeScale = value;
