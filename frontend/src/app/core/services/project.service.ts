@@ -113,6 +113,18 @@ export class ProjectService {
     }));
   }
 
+  updateClipFile(clipId: string, sourceFileId: string, duration: number): void {
+    this._state.update(s => ({
+      ...s,
+      tracks: s.tracks.map(t => ({
+        ...t,
+        clips: t.clips.map(c =>
+          c.id === clipId ? { ...c, sourceFileId, sourceOffset: 0, duration } : c
+        ),
+      })),
+    }));
+  }
+
   setClipPeaks(clipId: string, peakData: PeakSample[]): void {
     this._state.update(s => ({
       ...s,
@@ -144,6 +156,39 @@ export class ProjectService {
         clips: t.clips.map(c => c.id === clipId ? { ...c, startTime: Math.max(0, newStartTime) } : c),
       })),
     }));
+  }
+
+  batchMove(
+    primary: { clipId: string; newTrackId: string; newStartTime: number },
+    shifts: { clipId: string; newStartTime: number }[],
+  ): void {
+    this.mutate(s => {
+      let primaryClip: Clip | null = null;
+      const withoutPrimary = s.tracks.map(t => {
+        const idx = t.clips.findIndex(c => c.id === primary.clipId);
+        if (idx === -1) return t;
+        primaryClip = {
+          ...t.clips[idx],
+          startTime: Math.max(0, primary.newStartTime),
+          trackId: primary.newTrackId,
+        };
+        return { ...t, clips: t.clips.filter(c => c.id !== primary.clipId) };
+      });
+      if (!primaryClip) return s;
+
+      const shiftMap = new Map(shifts.map(sh => [sh.clipId, sh.newStartTime]));
+      return {
+        ...s,
+        tracks: withoutPrimary.map(t => {
+          let clips = t.clips.map(c => {
+            const ns = shiftMap.get(c.id);
+            return ns !== undefined ? { ...c, startTime: Math.max(0, ns) } : c;
+          });
+          if (t.id === primary.newTrackId) clips = [...clips, primaryClip!];
+          return { ...t, clips };
+        }),
+      };
+    });
   }
 
   moveClipToTrack(clipId: string, newTrackId: string, newStartTime: number): void {

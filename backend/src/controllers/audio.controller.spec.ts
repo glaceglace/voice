@@ -182,6 +182,17 @@ describe('POST /api/audio/cut', () => {
     expect(res.body.durationSeconds).toBe(1.5);
   });
 
+  it('returns peaks in response when resolution is provided', async () => {
+    const peaks = [{ min: -0.5, max: 0.5 }];
+    mockFfmpeg.cut.mockResolvedValueOnce({ outputPath: testFilePath, durationSeconds: 1.5, peaks: { fileId: 'x', peaks, resolution: 1 } });
+    const res = await request(app())
+      .post('/api/audio/cut')
+      .send({ fileId: 'test-id', start: 0, end: 1.5, resolution: 200 });
+    expect(res.status).toBe(200);
+    expect(res.body.peaks).toEqual(peaks);
+    expect(mockFfmpeg.cut).toHaveBeenCalledWith(expect.any(String), 0, 1.5, 200);
+  });
+
   it('returns 500 on ffmpeg error', async () => {
     mockFfmpeg.cut.mockRejectedValueOnce(new Error('cut failed'));
     const res = await request(app())

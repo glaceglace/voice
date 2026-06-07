@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { ProjectService } from './project.service';
 import { ApiService } from './api.service';
-import type { Clip } from '../models/project.model';
+import type { Clip, PeakSample } from '../models/project.model';
 
 @Injectable({ providedIn: 'root' })
 export class EditActionsService {
@@ -12,6 +12,25 @@ export class EditActionsService {
   private peakResolution(duration: number): number {
     const pixelWidth = this.project.state().zoom * Math.max(duration, 1);
     return Math.min(Math.max(Math.ceil(pixelWidth), 200), 10000);
+  }
+
+  private slicePeaks(clip: Clip, startFraction: number, endFraction: number): PeakSample[] | null {
+    if (!clip.peakData?.length) return null;
+    const n = clip.peakData.length;
+    return clip.peakData.slice(Math.floor(startFraction * n), Math.ceil(endFraction * n));
+  }
+
+  private async finalizePeaks(
+    clip: Clip,
+    newClipId: string,
+    result: { fileId: string; durationSeconds: number; peaks?: { min: number; max: number }[] },
+  ): Promise<void> {
+    if (result.peaks) {
+      this.project.setClipPeaks(newClipId, result.peaks);
+      return;
+    }
+    const data = await firstValueFrom(this.api.getPeaks(result.fileId, this.peakResolution(result.durationSeconds)));
+    if (data) this.project.setClipPeaks(newClipId, data.peaks);
   }
 
   async cutSelection(): Promise<void> {
@@ -36,11 +55,19 @@ export class EditActionsService {
       return;
     }
 
+    // Fractions within the clip's peak array for each surviving portion
+    const leftEndFrac   = (sel.start - clip.startTime) / clip.duration;
+    const rightStartFrac = (sel.end  - clip.startTime) / clip.duration;
+
     // Case B: both sides remain — split into two clips
     if (hasLeft && hasRight) {
+      const leftDuration  = fileStart - clip.sourceOffset;
+      const rightDuration = clipEnd   - fileEnd;
+
+      // Fire both cuts in parallel; peaks are extracted from the original file on the backend
       const [left, right] = await Promise.all([
-        firstValueFrom(this.api.cut(clip.sourceFileId, clip.sourceOffset, fileStart)),
-        firstValueFrom(this.api.cut(clip.sourceFileId, fileEnd, clipEnd)),
+        firstValueFrom(this.api.cut(clip.sourceFileId, clip.sourceOffset, fileStart, this.peakResolution(leftDuration))),
+        firstValueFrom(this.api.cut(clip.sourceFileId, fileEnd, clipEnd,             this.peakResolution(rightDuration))),
       ]);
 
       const leftClip: Clip = {
@@ -51,11 +78,9 @@ export class EditActionsService {
         duration: left.durationSeconds,
         sourceFileId: left.fileId,
         sourceOffset: 0,
-        peakData: null,
-        isLoading: true,
+        peakData: left.peaks ?? this.slicePeaks(clip, 0, leftEndFrac),
+        isLoading: false,
       };
-
-      // Right clip starts immediately after the left clip (no gap — ripple delete)
       const rightClip: Clip = {
         id: crypto.randomUUID(),
         trackId: clip.trackId,
@@ -64,67 +89,75 @@ export class EditActionsService {
         duration: right.durationSeconds,
         sourceFileId: right.fileId,
         sourceOffset: 0,
-        peakData: null,
-        isLoading: true,
+        peakData: right.peaks ?? this.slicePeaks(clip, rightStartFrac, 1),
+        isLoading: false,
       };
 
       this.project.replaceClip(sel.clipId, [leftClip, rightClip]);
       this.project.setSelection(null);
-      // Place navigator at the junction between the two clips
       this.project.setPlayhead(rightClip.startTime);
 
-      const [leftPeaks, rightPeaks] = await Promise.all([
-        firstValueFrom(this.api.getPeaks(left.fileId, this.peakResolution(left.durationSeconds))),
-        firstValueFrom(this.api.getPeaks(right.fileId, this.peakResolution(right.durationSeconds))),
-      ]);
-      if (leftPeaks)  this.project.setClipPeaks(leftClip.id,  leftPeaks.peaks);
-      if (rightPeaks) this.project.setClipPeaks(rightClip.id, rightPeaks.peaks);
+      // Refine peaks only if the backend didn't return them already
+      if (!left.peaks || !right.peaks) {
+        await Promise.all([
+          left.peaks  ? Promise.resolve() : this.finalizePeaks(clip, leftClip.id,  left),
+          right.peaks ? Promise.resolve() : this.finalizePeaks(clip, rightClip.id, right),
+        ]);
+      }
       return;
     }
 
-    // Case C: only left portion remains
+    // Case C: only left portion remains — optimistic update first, then cut in background.
+    // Use the original sourceFileId + sourceOffset so playback is correct during the wait.
     if (hasLeft) {
-      const result = await firstValueFrom(
-        this.api.cut(clip.sourceFileId, clip.sourceOffset, fileStart),
-      );
+      const leftDuration = fileStart - clip.sourceOffset;
+      const derivedPeaks = this.slicePeaks(clip, 0, leftEndFrac);
       const newClip: Clip = {
         id: crypto.randomUUID(),
         trackId: clip.trackId,
         name: clip.name,
         startTime: clip.startTime,
-        duration: result.durationSeconds,
-        sourceFileId: result.fileId,
-        sourceOffset: 0,
-        peakData: null,
-        isLoading: true,
+        duration: leftDuration,
+        sourceFileId: clip.sourceFileId,
+        sourceOffset: clip.sourceOffset,
+        peakData: derivedPeaks,
+        isLoading: !derivedPeaks,
       };
       this.project.replaceClip(sel.clipId, [newClip]);
       this.project.setSelection(null);
       this.project.setPlayhead(newClip.startTime + newClip.duration);
-      const peaks = await firstValueFrom(this.api.getPeaks(result.fileId, this.peakResolution(result.durationSeconds)));
-      if (peaks) this.project.setClipPeaks(newClip.id, peaks.peaks);
+
+      const result = await firstValueFrom(
+        this.api.cut(clip.sourceFileId, clip.sourceOffset, fileStart, this.peakResolution(leftDuration)),
+      );
+      this.project.updateClipFile(newClip.id, result.fileId, result.durationSeconds);
+      await this.finalizePeaks(clip, newClip.id, result);
       return;
     }
 
-    // Case D: only right portion remains
-    const result = await firstValueFrom(
-      this.api.cut(clip.sourceFileId, fileEnd, clipEnd),
-    );
+    // Case D: only right portion remains — optimistic update first, then cut in background.
+    // Point sourceOffset at the right portion of the original file so playback starts at the right place.
+    const rightDuration = clipEnd - fileEnd;
+    const derivedPeaks = this.slicePeaks(clip, rightStartFrac, 1);
     const newClip: Clip = {
       id: crypto.randomUUID(),
       trackId: clip.trackId,
       name: clip.name,
       startTime: clip.startTime,
-      duration: result.durationSeconds,
-      sourceFileId: result.fileId,
-      sourceOffset: 0,
-      peakData: null,
-      isLoading: true,
+      duration: rightDuration,
+      sourceFileId: clip.sourceFileId,
+      sourceOffset: fileEnd,
+      peakData: derivedPeaks,
+      isLoading: !derivedPeaks,
     };
     this.project.replaceClip(sel.clipId, [newClip]);
     this.project.setSelection(null);
     this.project.setPlayhead(newClip.startTime);
-    const peaks = await firstValueFrom(this.api.getPeaks(result.fileId, this.peakResolution(result.durationSeconds)));
-    if (peaks) this.project.setClipPeaks(newClip.id, peaks.peaks);
+
+    const result = await firstValueFrom(
+      this.api.cut(clip.sourceFileId, fileEnd, clipEnd, this.peakResolution(rightDuration)),
+    );
+    this.project.updateClipFile(newClip.id, result.fileId, result.durationSeconds);
+    await this.finalizePeaks(clip, newClip.id, result);
   }
 }

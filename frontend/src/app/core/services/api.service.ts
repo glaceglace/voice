@@ -43,8 +43,10 @@ export class ApiService {
     return this.http.get<{ fileId: string; peaks: { min: number; max: number }[]; resolution: number }>(url);
   }
 
-  cut(fileId: string, start: number, end: number): Observable<{ fileId: string; durationSeconds: number }> {
-    return this.http.post<{ fileId: string; durationSeconds: number }>(`${this.base}/audio/cut`, { fileId, start, end });
+  cut(fileId: string, start: number, end: number, resolution?: number): Observable<{ fileId: string; durationSeconds: number; peaks?: { min: number; max: number }[] }> {
+    return this.http.post<{ fileId: string; durationSeconds: number; peaks?: { min: number; max: number }[] }>(
+      `${this.base}/audio/cut`, { fileId, start, end, resolution },
+    );
   }
 
   trim(fileId: string, silenceThreshold: number, minSilenceDuration: number): Observable<{ fileId: string; durationSeconds: number }> {

@@ -21,6 +21,7 @@ interface ClipDragState {
   previewStartTime: number;
   previewTrackId: string;
   snapIndicatorX: number | null;
+  displacedClips: { id: string; newStart: number }[];
 }
 
 const SNAP_PX = 12;
@@ -85,7 +86,8 @@ export const TRACK_COLORS = [
               <div class="clip-block"
                 [class.selected]="isSelected(clip)"
                 [class.is-dragging]="clipDrag?.clipId === clip.id"
-                [style.left.px]="clip.startTime * project.state().zoom"
+                [class.is-displaced]="isDisplaced(clip.id)"
+                [style.left.px]="getClipDisplayStart(clip, track.id) * project.state().zoom"
                 [style.width.px]="clip.duration * project.state().zoom"
                 [style.--track-color]="trackColor(i)"
               >
@@ -261,6 +263,7 @@ export const TRACK_COLORS = [
         box-shadow: 0 0 0 1px rgba(255,152,0,0.4);
       }
       &.is-dragging { opacity: 0.35; }
+      &.is-displaced { opacity: 0.55; outline: 1px dashed var(--track-color, #1a73e8); }
     }
 
     /* Alt-hold cursor & move hint */
@@ -635,6 +638,7 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
               previewStartTime: clip.startTime,
               previewTrackId: trackId,
               snapIndicatorX: null,
+              displacedClips: [],
             };
             e.preventDefault();
           }
@@ -670,20 +674,25 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
 
     if (this.clipDrag) {
       const { trackId, time } = this.hitTest(e);
+      const targetTrackId = trackId ?? this.clipDrag.previewTrackId;
       let newStart = Math.max(0, time - this.clipDrag.grabOffsetTime);
-      let snapX: number | null = null;
+      let snappedTo: number | null = null;
       if (this.project.snapEnabled()) {
-        const snapped = this.findSnapTarget(this.clipDrag.clipId, newStart, this.clipDrag.duration);
-        if (snapped !== null) {
-          newStart = snapped;
-          snapX = snapped * this.project.state().zoom;
-        }
+        snappedTo = this.findSnapTarget(this.clipDrag.clipId, newStart, this.clipDrag.duration);
+        if (snappedTo !== null) newStart = snappedTo;
       }
+      const { resolvedStart, displaced } = this.resolveWithRipple(
+        this.clipDrag.clipId, targetTrackId, newStart, this.clipDrag.duration,
+      );
+      const snapIndicatorX = snappedTo !== null && resolvedStart === snappedTo
+        ? resolvedStart * this.project.state().zoom
+        : null;
       this.clipDrag = {
         ...this.clipDrag,
-        previewStartTime: newStart,
-        previewTrackId: trackId ?? this.clipDrag.previewTrackId,
-        snapIndicatorX: snapX,
+        previewStartTime: resolvedStart,
+        previewTrackId: targetTrackId,
+        snapIndicatorX,
+        displacedClips: displaced,
       };
       return;
     }
@@ -729,13 +738,15 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
     this.handleDragSide = null;
 
     if (this.clipDrag) {
-      const { clipId, sourceTrackId, previewTrackId, previewStartTime } = this.clipDrag;
+      const { clipId, previewTrackId, previewStartTime, duration } = this.clipDrag;
       this.clipDrag = null;
-      if (previewTrackId === sourceTrackId) {
-        this.project.moveClip(clipId, previewStartTime);
-      } else {
-        this.project.moveClipToTrack(clipId, previewTrackId, previewStartTime);
-      }
+      const { resolvedStart, displaced } = this.resolveWithRipple(
+        clipId, previewTrackId, previewStartTime, duration,
+      );
+      this.project.batchMove(
+        { clipId, newTrackId: previewTrackId, newStartTime: resolvedStart },
+        displaced.map(d => ({ clipId: d.id, newStartTime: d.newStart })),
+      );
       return;
     }
 
@@ -894,6 +905,16 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
     return clip.name ? `${clip.name}  ${clip.duration.toFixed(1)}s` : `${clip.duration.toFixed(1)}s`;
   }
 
+  getClipDisplayStart(clip: Clip, trackId: string): number {
+    if (!this.clipDrag || this.clipDrag.previewTrackId !== trackId) return clip.startTime;
+    const d = this.clipDrag.displacedClips.find(dc => dc.id === clip.id);
+    return d ? d.newStart : clip.startTime;
+  }
+
+  isDisplaced(clipId: string): boolean {
+    return this.clipDrag?.displacedClips.some(d => d.id === clipId) ?? false;
+  }
+
   private buildMenuItems(trackId: string | null, time: number): ContextMenuItem[] {
     const sel = this.project.state().selection;
 
@@ -991,6 +1012,57 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     return snapTo !== null ? Math.max(0, snapTo) : null;
+  }
+
+  private resolveWithRipple(
+    excludeId: string,
+    targetTrackId: string,
+    desiredStart: number,
+    duration: number,
+  ): { resolvedStart: number; displaced: { id: string; newStart: number }[] } {
+    const track = this.project.state().tracks.find(t => t.id === targetTrackId);
+    if (!track) return { resolvedStart: desiredStart, displaced: [] };
+
+    const others = track.clips
+      .filter(c => c.id !== excludeId)
+      .map(c => ({ id: c.id, start: c.startTime, dur: c.duration }))
+      .sort((a, b) => a.start - b.start);
+
+    // Left-side blockers: clips that start before desiredStart but extend into it.
+    // We can't push them left reliably, so we push the dragged clip past them instead.
+    let resolvedStart = desiredStart;
+    for (const c of others) {
+      if (c.start < resolvedStart && c.start + c.dur > resolvedStart) {
+        resolvedStart = c.start + c.dur;
+      }
+    }
+
+    // Right-side clips: clips whose start falls within [resolvedStart, resolvedStart+duration).
+    // Push them right, then cascade so no two displaced clips overlap each other.
+    const mutable = others.map(c => ({ id: c.id, start: c.start, dur: c.dur, newStart: c.start }));
+    const requiredEnd = resolvedStart + duration;
+
+    for (const c of mutable) {
+      if (c.start >= resolvedStart && c.start < requiredEnd) {
+        c.newStart = requiredEnd;
+      }
+    }
+
+    // Cascade rightward to fix any chain of overlaps created by the initial push.
+    mutable.sort((a, b) => a.newStart - b.newStart);
+    for (let i = 1; i < mutable.length; i++) {
+      const prev = mutable[i - 1];
+      const curr = mutable[i];
+      if (curr.newStart < prev.newStart + prev.dur) {
+        curr.newStart = prev.newStart + prev.dur;
+      }
+    }
+
+    const displaced = mutable
+      .filter(c => Math.abs(c.newStart - c.start) > 0.001)
+      .map(c => ({ id: c.id, newStart: c.newStart }));
+
+    return { resolvedStart, displaced };
   }
 
   private clipAt(trackId: string, time: number): string | null {

@@ -63,14 +63,14 @@ export async function getPeaks(req: Request, res: Response, next: NextFunction):
 
 export async function cutAudio(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { fileId, start, end } = req.body as CutRequest;
+    const { fileId, start, end, resolution } = req.body as CutRequest;
     const filePath = storageService.getFilePath(fileId);
     if (!filePath) { res.status(404).json({ error: 'File not found', code: 'FILE_NOT_FOUND' }); return; }
 
-    const result = await ffmpegService.cut(filePath, start, end);
+    const result = await ffmpegService.cut(filePath, start, end, resolution);
     const newId = extractFileId(path.basename(result.outputPath));
     storageService.registerFile(newId, result.outputPath, newId);
-    res.json({ fileId: newId, durationSeconds: result.durationSeconds });
+    res.json({ fileId: newId, durationSeconds: result.durationSeconds, peaks: result.peaks?.peaks });
   } catch (err) {
     next(err);
   }

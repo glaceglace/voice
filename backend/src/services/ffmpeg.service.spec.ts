@@ -233,6 +233,21 @@ describe('cut', () => {
     mockFfmpeg.mockReturnValue(makeCmd({ fail: true }));
     await expect(svc.cut('/in.wav', 0, 1)).rejects.toThrow();
   });
+
+  it('extracts peaks in parallel when peakResolution is provided', async () => {
+    // First ffmpeg call: the cut (plain output path, no PassThrough)
+    mockFfmpeg.mockReturnValueOnce(makeCmd());
+    // Second ffmpeg call: extractPeaks (PassThrough output)
+    mockFfmpeg.mockReturnValueOnce(makeCmd({ passthroughData: Buffer.alloc(0) }));
+    const result = await svc.cut('/input.wav', 1, 4, 2);
+    expect(result.peaks).toBeDefined();
+    expect(result.durationSeconds).toBe(5.0);
+  });
+
+  it('returns undefined peaks when peakResolution is not provided', async () => {
+    const result = await svc.cut('/input.wav', 1, 4);
+    expect(result.peaks).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -46,21 +46,27 @@ export async function probeDuration(filePath: string): Promise<{ durationSeconds
   });
 }
 
-export async function cut(inputPath: string, start: number, end: number): Promise<InternalOpResult> {
+export async function cut(
+  inputPath: string,
+  start: number,
+  end: number,
+  peakResolution?: number,
+): Promise<InternalOpResult & { peaks?: PeakData }> {
   const ext = extOf(inputPath);
   const output = outPath(ext);
   const duration = end - start;
 
-  await runFfmpeg(
-    ffmpeg(inputPath)
-      .setStartTime(start)
-      .setDuration(duration)
-      .outputOptions(['-c copy'])
-      .output(output)
-  );
+  const cutPromise = runFfmpeg(
+    ffmpeg(inputPath).setStartTime(start).setDuration(duration)
+      .outputOptions(['-c copy']).output(output),
+  ).then(() => probeDuration(output));
 
-  const probe = await probeDuration(output);
-  return { outputPath: output, durationSeconds: probe.durationSeconds };
+  const peaksPromise = peakResolution !== undefined
+    ? extractPeaks(inputPath, peakResolution, start, end)
+    : Promise.resolve(undefined);
+
+  const [probe, peakData] = await Promise.all([cutPromise, peaksPromise]);
+  return { outputPath: output, durationSeconds: probe.durationSeconds, peaks: peakData };
 }
 
 export async function trim(inputPath: string, silenceThreshold: number, minSilenceDuration: number): Promise<InternalOpResult> {

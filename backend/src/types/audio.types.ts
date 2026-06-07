@@ -32,6 +32,7 @@ export interface CutRequest {
   fileId: string;
   start: number;
   end: number;
+  resolution?: number;
 }
 
 export interface TrimRequest {
