@@ -1,8 +1,5 @@
 import { Component, EventEmitter, inject, Output } from '@angular/core';
-import { MatButtonModule } from '@angular/material/button';
-import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { MatDividerModule } from '@angular/material/divider';
 import { FormatTimePipe } from '../../../shared/pipes/format-time.pipe';
 import { ProjectService } from '../../../core/services/project.service';
 import { RecorderService } from '../../../core/services/recorder.service';
@@ -14,123 +11,118 @@ import { take } from 'rxjs/operators';
 @Component({
   selector: 'app-toolbar',
   standalone: true,
-  imports: [MatButtonModule, MatIconModule, MatTooltipModule, MatDividerModule, FormatTimePipe],
+  imports: [MatTooltipModule, FormatTimePipe],
   template: `
     <div class="toolbar">
 
-      <!-- app name -->
-      <span class="app-name">
-        <mat-icon class="logo-icon">graphic_eq</mat-icon>
-        Voice Editor
-      </span>
+      <!-- wordmark -->
+      <div class="wordmark">
+        <i class="ph-light ph-wave-sine logo-icon"></i>
+        <span class="wordmark-text">VOICE</span>
+      </div>
 
-      <mat-divider vertical class="divider" />
+      <div class="sep"></div>
 
-      <!-- transport group -->
+      <!-- transport -->
       <div class="btn-group">
-        <button mat-icon-button matTooltip="Rewind to start" (click)="rewind()"
+        <button class="tb-btn rewind-btn" matTooltip="Rewind to start" (click)="rewind()"
           [disabled]="recorder.state() === 'recording'">
-          <mat-icon>skip_previous</mat-icon>
+          <i class="ph-light ph-skip-back"></i>
         </button>
 
-        <button mat-icon-button class="play-btn"
-          [matTooltip]="playback.isPlaying() ? 'Pause' : 'Play'"
+        <button class="tb-btn play-btn"
+          [matTooltip]="playback.isPlaying() ? 'Pause (Space)' : 'Play (Space)'"
           (click)="togglePlay()"
           [disabled]="recorder.state() === 'recording'">
-          <mat-icon>{{ playback.isPlaying() ? 'pause' : 'play_arrow' }}</mat-icon>
+          <i class="ph-light" [class.ph-pause]="playback.isPlaying()" [class.ph-play]="!playback.isPlaying()"></i>
         </button>
 
-        <button mat-icon-button matTooltip="Stop" (click)="stop()"
+        <button class="tb-btn stop-btn" matTooltip="Stop" (click)="stop()"
           [disabled]="!playback.isPlaying()">
-          <mat-icon>stop</mat-icon>
+          <i class="ph-light ph-stop"></i>
         </button>
 
         @if (recorder.state() === 'recording') {
-          <button mat-icon-button class="rec-active" matTooltip="Stop Recording"
-            (click)="stopRecording()">
-            <mat-icon>stop</mat-icon>
+          <button class="tb-btn rec-active" matTooltip="Stop recording" (click)="stopRecording()">
+            <i class="ph-light ph-stop-circle"></i>
           </button>
         } @else {
-          <button mat-icon-button class="rec-btn"
+          <button class="tb-btn rec-btn"
             matTooltip="Record from microphone"
             (click)="startRecording()"
             [disabled]="recorder.state() === 'processing' || playback.isPlaying()">
-            <mat-icon>fiber_manual_record</mat-icon>
+            <i class="ph-light ph-record"></i>
           </button>
         }
       </div>
 
-      <mat-divider vertical class="divider" />
+      <div class="sep"></div>
 
-      <!-- edit group -->
+      <!-- edit -->
       <div class="btn-group">
-        <button mat-icon-button matTooltip="Cut selected region (Ctrl+X)"
+        <button class="tb-btn cut-btn" matTooltip="Cut selected region (Ctrl+X)"
           (click)="cutSelection()"
           [disabled]="!project.state().selection">
-          <mat-icon>content_cut</mat-icon>
+          <i class="ph-light ph-scissors"></i>
         </button>
-
-        <button mat-icon-button matTooltip="Undo (Ctrl+Z)"
+        <button class="tb-btn undo-btn" matTooltip="Undo (Ctrl+Z)"
           (click)="project.undo()"
           [disabled]="!project.canUndo()">
-          <mat-icon>undo</mat-icon>
+          <i class="ph-light ph-arrow-counter-clockwise"></i>
         </button>
       </div>
 
-      <mat-divider vertical class="divider" />
+      <div class="sep"></div>
 
-      <!-- file group -->
+      <!-- file -->
       <div class="btn-group">
-        <button mat-icon-button matTooltip="Export audio" (click)="exportOpen.emit()">
-          <mat-icon>save_alt</mat-icon>
+        <button class="tb-btn export-btn" matTooltip="Export audio" (click)="exportOpen.emit()">
+          <i class="ph-light ph-export"></i>
         </button>
-
-        <button mat-icon-button matTooltip="Add track" (click)="project.addTrack()">
-          <mat-icon>library_add</mat-icon>
+        <button class="tb-btn add-track-btn" matTooltip="Add track" (click)="project.addTrack()">
+          <i class="ph-light ph-plus"></i>
         </button>
-
-        <button mat-icon-button class="new-project-btn" matTooltip="New project — discard all changes" (click)="newProject()">
-          <mat-icon>delete_forever</mat-icon>
+        <button class="tb-btn danger-btn" matTooltip="New project — discard all changes" (click)="newProject()">
+          <i class="ph-light ph-trash"></i>
         </button>
       </div>
 
-      <mat-divider vertical class="divider" />
+      <div class="sep"></div>
 
-      <!-- snap toggle -->
-      <button mat-icon-button
-        [class.snap-active]="project.snapEnabled()"
+      <!-- snap -->
+      <button class="tb-btn snap-btn" [class.snap-on]="project.snapEnabled()"
         [matTooltip]="project.snapEnabled() ? 'Snap enabled — click to disable' : 'Snap disabled — click to enable'"
         (click)="project.toggleSnap()">
-        <mat-icon>{{ project.snapEnabled() ? 'grid_on' : 'grid_off' }}</mat-icon>
+        <i class="ph-light" [class.ph-magnet]="project.snapEnabled()" [class.ph-magnet-straight]="!project.snapEnabled()"></i>
       </button>
 
-      <mat-divider vertical class="divider" />
+      <div class="sep"></div>
 
-      <!-- zoom group -->
-      <div class="btn-group zoom-group">
-        <button mat-icon-button matTooltip="Zoom out" (click)="zoomOut()">
-          <mat-icon>zoom_out</mat-icon>
+      <!-- zoom -->
+      <div class="zoom-group">
+        <button class="tb-btn zoom-btn zoom-out-btn" matTooltip="Zoom out" (click)="zoomOut()">
+          <i class="ph-light ph-magnifying-glass-minus"></i>
         </button>
-        <span class="zoom-val">{{ project.state().zoom }}px/s</span>
-        <button mat-icon-button matTooltip="Zoom in" (click)="zoomIn()">
-          <mat-icon>zoom_in</mat-icon>
+        <span class="zoom-val">{{ project.state().zoom }}<small>px/s</small></span>
+        <button class="tb-btn zoom-btn zoom-in-btn" matTooltip="Zoom in" (click)="zoomIn()">
+          <i class="ph-light ph-magnifying-glass-plus"></i>
         </button>
       </div>
 
       <div class="spacer"></div>
 
-      <!-- status right side -->
+      <!-- right: state + time -->
       <div class="status-right">
         @if (recorder.state() === 'recording') {
-          <span class="rec-indicator">
-            <mat-icon class="blink">fiber_manual_record</mat-icon>
-            REC
+          <span class="rec-badge">
+            <span class="rec-dot"></span>
+            <span class="rec-label">REC</span>
           </span>
         }
         @if (recorder.state() === 'processing') {
-          <span class="processing">Processing…</span>
+          <span class="processing">processing…</span>
         }
-        <span class="time">{{ project.state().playheadPosition | formatTime }}</span>
+        <span class="time-display">{{ project.state().playheadPosition | formatTime }}</span>
       </div>
 
     </div>
@@ -139,86 +131,163 @@ import { take } from 'rxjs/operators';
     .toolbar {
       display: flex;
       align-items: center;
-      gap: 2px;
-      padding: 0 12px;
+      gap: 1px;
+      padding: 0 14px;
       background: var(--panel-bg);
       border-bottom: 1px solid var(--border);
-      height: 56px;
+      height: 44px;
       flex-shrink: 0;
     }
 
-    .app-name {
+    /* ── wordmark ── */
+    .wordmark {
       display: flex;
       align-items: center;
-      gap: 6px;
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--text-primary);
-      white-space: nowrap;
-      padding-right: 4px;
+      gap: 7px;
+      padding-right: 6px;
     }
-    .logo-icon { color: var(--accent); font-size: 20px; width: 20px; height: 20px; }
-
-    .divider {
-      height: 32px !important;
-      margin: 0 8px;
-      border-color: var(--border) !important;
+    .logo-icon {
+      font-size: 18px;
+      color: var(--accent);
+    }
+    .wordmark-text {
+      font-family: 'Instrument Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      color: var(--text-secondary);
     }
 
+    /* ── separator ── */
+    .sep {
+      width: 1px;
+      height: 22px;
+      background: var(--border);
+      flex-shrink: 0;
+      margin: 0 5px;
+    }
+
+    /* ── button groups ── */
     .btn-group {
       display: flex;
       align-items: center;
-      gap: 2px;
+      gap: 1px;
     }
 
-    .zoom-group { gap: 0; }
+    /* ── base button ── */
+    .tb-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      border-radius: 5px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: background 0.1s ease, color 0.1s ease;
+
+      i { font-size: 16px; }
+
+      &:hover:not(:disabled) {
+        background: var(--accent-glow);
+        color: var(--text-primary);
+      }
+
+      &:disabled {
+        opacity: 0.28;
+        cursor: default;
+        pointer-events: none;
+      }
+    }
+
+    /* ── specific states ── */
+    .play-btn:hover:not(:disabled) i { color: #4caf50; }
+
+    .rec-btn i { color: rgba(192, 57, 43, 0.7); }
+    .rec-btn:hover:not(:disabled) i { color: #e74c3c; }
+
+    .rec-active i {
+      color: #e74c3c;
+      animation: flash 0.9s ease-in-out infinite;
+    }
+
+    .danger-btn:hover:not(:disabled) i { color: var(--warn); }
+
+    .snap-on {
+      background: var(--accent-dim);
+      i { color: var(--accent); }
+      &:hover { background: var(--accent-dim) !important; }
+    }
+
+    /* ── zoom ── */
+    .zoom-group {
+      display: flex;
+      align-items: center;
+    }
+    .zoom-btn { width: 28px; }
     .zoom-val {
-      font-size: 11px;
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
       color: var(--text-muted);
-      min-width: 56px;
+      min-width: 54px;
       text-align: center;
+      small { font-size: 8px; opacity: 0.55; margin-left: 1px; }
     }
-
-    .snap-active mat-icon { color: var(--accent); }
-
-    .play-btn mat-icon { color: #4caf50; }
-    .rec-btn mat-icon { color: #f44336; }
-    .rec-active mat-icon { color: #f44336; animation: pulse 0.8s infinite; }
-    .new-project-btn mat-icon { color: #f44336; }
-
-    @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }
 
     .spacer { flex: 1; }
 
+    /* ── right status cluster ── */
     .status-right {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
 
-    .rec-indicator {
+    .rec-badge {
       display: flex;
       align-items: center;
-      gap: 4px;
-      color: #f44336;
-      font-size: 12px;
-      font-weight: 500;
+      gap: 5px;
     }
-    .rec-indicator mat-icon { font-size: 14px; width: 14px; height: 14px; }
-    .blink { animation: pulse 0.8s infinite; }
+    .rec-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #e74c3c;
+      animation: flash 0.9s ease-in-out infinite;
+    }
+    .rec-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      color: #e74c3c;
+    }
 
     .processing {
-      font-size: 12px;
+      font-family: 'Instrument Sans', sans-serif;
+      font-size: 11px;
       color: var(--text-muted);
+      font-style: italic;
     }
 
-    .time {
-      font-family: 'Roboto Mono', 'Courier New', monospace;
-      font-size: 16px;
-      font-weight: 500;
-      color: #4caf50;
-      min-width: 90px;
+    /* ── the star of the show: time clock ── */
+    .time-display {
+      font-family: 'DM Mono', monospace;
+      font-size: 20px;
+      font-weight: 300;
+      color: var(--time-color);
+      letter-spacing: 0.02em;
+      min-width: 88px;
       text-align: right;
+      line-height: 1;
+    }
+
+    @keyframes flash {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.15; }
     }
   `],
 })
@@ -261,8 +330,6 @@ export class ToolbarComponent {
     const firstTrackId = this.project.state().tracks[0]?.id;
     if (!firstTrackId) return;
     await this.recorder.startRecording();
-
-    // take(1) ensures we only subscribe to the next event, preventing memory leaks
     this.recorder.recorded$.pipe(take(1)).subscribe(async ({ blob, mimeType }) => {
       const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
       await this.fileService.importBlob(blob, `recording.${ext}`, firstTrackId);
@@ -284,5 +351,4 @@ export class ToolbarComponent {
       this.project.reset();
     }
   }
-
 }

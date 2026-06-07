@@ -213,17 +213,15 @@ describe('ToolbarComponent', () => {
   });
 
   it('clicking rewind button calls rewind', () => {
-    // Find all buttons; rewind is button index 0 (first in transport group)
-    const buttons = fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLElement>;
-    // Find the skip_previous button - has icon text 'skip_previous'
-    const rewindBtn = Array.from(buttons).find(b => b.textContent?.includes('skip_previous'));
+    const el = fixture.nativeElement as HTMLElement;
+    const rewindBtn = el.querySelector('.rewind-btn') as HTMLElement;
     if (rewindBtn) { rewindBtn.click(); fixture.detectChanges(); }
     expect(playback.stop).toHaveBeenCalled();
   });
 
   it('clicking play button calls togglePlay', () => {
-    const buttons = fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLElement>;
-    const playBtn = Array.from(buttons).find(b => b.textContent?.includes('play_arrow'));
+    const el = fixture.nativeElement as HTMLElement;
+    const playBtn = el.querySelector('.play-btn') as HTMLElement;
     if (playBtn) { playBtn.click(); fixture.detectChanges(); }
     expect(playback.play).toHaveBeenCalled();
   });
@@ -248,8 +246,8 @@ describe('ToolbarComponent', () => {
     const clip = project.addClip(trackId, 'f1', 10);
     project.setSelection({ clipId: clip.id, start: 2, end: 5 });
     fixture.detectChanges();
-    const buttons = fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLElement>;
-    const cutBtn = Array.from(buttons).find(b => b.textContent?.includes('content_cut'));
+    const el = fixture.nativeElement as HTMLElement;
+    const cutBtn = el.querySelector('.cut-btn') as HTMLElement;
     if (cutBtn) { cutBtn.click(); fixture.detectChanges(); }
     await new Promise(r => setTimeout(r, 10));
     expect(api.cut).toHaveBeenCalled();
@@ -258,8 +256,8 @@ describe('ToolbarComponent', () => {
   it('clicking undo button calls project.undo', () => {
     project.addTrack();
     fixture.detectChanges();
-    const buttons = fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLElement>;
-    const undoBtn = Array.from(buttons).find(b => b.textContent?.includes('undo'));
+    const el = fixture.nativeElement as HTMLElement;
+    const undoBtn = el.querySelector('.undo-btn') as HTMLElement;
     if (undoBtn) { undoBtn.click(); fixture.detectChanges(); }
     expect(project.state().tracks).toHaveLength(1);
   });
@@ -267,32 +265,32 @@ describe('ToolbarComponent', () => {
   it('clicking export button emits exportOpen', () => {
     let emitted = false;
     comp.exportOpen.subscribe(() => { emitted = true; });
-    const buttons = fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLElement>;
-    const exportBtn = Array.from(buttons).find(b => b.textContent?.includes('save_alt'));
+    const el = fixture.nativeElement as HTMLElement;
+    const exportBtn = el.querySelector('.export-btn') as HTMLElement;
     if (exportBtn) { exportBtn.click(); fixture.detectChanges(); }
     expect(emitted).toBe(true);
   });
 
   it('clicking add-track button adds a track', () => {
     const beforeCount = project.state().tracks.length;
-    const buttons = fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLElement>;
-    const addBtn = Array.from(buttons).find(b => b.textContent?.includes('library_add'));
+    const el = fixture.nativeElement as HTMLElement;
+    const addBtn = el.querySelector('.add-track-btn') as HTMLElement;
     if (addBtn) { addBtn.click(); fixture.detectChanges(); }
     expect(project.state().tracks.length).toBeGreaterThan(beforeCount - 1);
   });
 
   it('clicking zoom-out button calls zoomOut', () => {
     const before = project.state().zoom;
-    const buttons = fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLElement>;
-    const zoomOutBtn = Array.from(buttons).find(b => b.textContent?.includes('zoom_out'));
+    const el = fixture.nativeElement as HTMLElement;
+    const zoomOutBtn = el.querySelector('.zoom-out-btn') as HTMLElement;
     if (zoomOutBtn) { zoomOutBtn.click(); fixture.detectChanges(); }
     expect(project.state().zoom).toBeLessThanOrEqual(before);
   });
 
   it('clicking zoom-in button calls zoomIn', () => {
     const before = project.state().zoom;
-    const buttons = fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLElement>;
-    const zoomInBtn = Array.from(buttons).find(b => b.textContent?.includes('zoom_in'));
+    const el = fixture.nativeElement as HTMLElement;
+    const zoomInBtn = el.querySelector('.zoom-in-btn') as HTMLElement;
     if (zoomInBtn) { zoomInBtn.click(); fixture.detectChanges(); }
     expect(project.state().zoom).toBeGreaterThanOrEqual(before);
   });
@@ -321,21 +319,19 @@ describe('ToolbarComponent', () => {
   it('snap toggle button calls project.toggleSnap', () => {
     const toggleSpy = vi.spyOn(project, 'toggleSnap');
     const el = fixture.nativeElement as HTMLElement;
-    // Find the snap toggle button by its grid_on icon
-    const btn = Array.from(el.querySelectorAll('button')).find(b => b.textContent?.includes('grid_'));
+    const btn = el.querySelector('.snap-btn') as HTMLElement;
     expect(btn).toBeTruthy();
     btn?.click();
     expect(toggleSpy).toHaveBeenCalled();
   });
 
-  it('snap toggle shows grid_on when enabled and grid_off when disabled', () => {
+  it('snap toggle shows magnet icon when enabled and magnet-straight when disabled', () => {
     const el = fixture.nativeElement as HTMLElement;
-    const iconEl = () => el.querySelector('mat-icon[data-snap]') ??
-      Array.from(el.querySelectorAll('mat-icon')).find(i => i.textContent?.includes('grid_'));
-    expect(iconEl()?.textContent?.trim()).toBe('grid_on');
+    const snapIcon = () => el.querySelector('i.ph-magnet, i.ph-magnet-straight');
+    expect(snapIcon()?.classList.contains('ph-magnet')).toBe(true);
     project.toggleSnap();
     fixture.detectChanges();
-    expect(iconEl()?.textContent?.trim()).toBe('grid_off');
+    expect(snapIcon()?.classList.contains('ph-magnet-straight')).toBe(true);
   });
 
 });

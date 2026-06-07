@@ -1,5 +1,4 @@
 import { Component, EventEmitter, HostListener, Input, Output } from '@angular/core';
-import { MatIconModule } from '@angular/material/icon';
 
 export interface ContextMenuItem {
   label: string;
@@ -13,7 +12,6 @@ export interface ContextMenuItem {
 @Component({
   selector: 'app-context-menu',
   standalone: true,
-  imports: [MatIconModule],
   template: `
     <ul class="ctx-menu" [style.left.px]="position.x" [style.top.px]="position.y">
       @for (item of items; track $index) {
@@ -22,7 +20,7 @@ export interface ContextMenuItem {
         } @else {
           <li class="item" [class.disabled]="item.disabled" (click)="invoke(item)">
             @if (item.icon) {
-              <mat-icon class="item-icon">{{ item.icon }}</mat-icon>
+              <i class="ph-light item-icon" [class]="'ph-' + item.icon"></i>
             }
             <span class="item-label">{{ item.label }}</span>
             @if (item.shortcut) {
@@ -40,32 +38,52 @@ export interface ContextMenuItem {
       margin: 0;
       padding: 4px 0;
       list-style: none;
-      background: #2a2a2a;
-      border: 1px solid #444;
+      background: var(--panel-bg2);
+      border: 1px solid var(--border-strong);
       border-radius: 6px;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
       min-width: 200px;
     }
+
     .item {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 6px 16px;
+      gap: 9px;
+      padding: 7px 14px;
       cursor: pointer;
+      font-family: 'Instrument Sans', sans-serif;
       font-size: 13px;
-      color: rgba(255,255,255,0.87);
-      &:hover { background: rgba(255,255,255,0.08); }
-      &.disabled { opacity: 0.4; cursor: default; pointer-events: none; }
+      color: var(--text-primary);
+      transition: background 0.08s;
+
+      &:hover { background: var(--accent-glow); }
+
+      &.disabled {
+        opacity: 0.3;
+        cursor: default;
+        pointer-events: none;
+      }
     }
+
     .item-icon {
-      font-size: 16px !important;
-      width: 16px !important;
-      height: 16px !important;
-      color: rgba(255,255,255,0.5);
+      font-size: 14px;
+      color: var(--text-secondary);
+      flex-shrink: 0;
     }
+
     .item-label { flex: 1; }
-    .item-shortcut { font-size: 11px; color: rgba(255,255,255,0.4); }
-    .separator { height: 1px; background: #444; margin: 4px 0; }
+
+    .item-shortcut {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .separator {
+      height: 1px;
+      background: var(--border);
+      margin: 3px 0;
+    }
   `],
 })
 export class ContextMenuComponent {

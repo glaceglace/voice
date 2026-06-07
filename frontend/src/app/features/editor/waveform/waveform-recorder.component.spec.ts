@@ -9,9 +9,13 @@ function stubCanvas() {
     moveTo: vi.fn(),
     lineTo: vi.fn(),
     stroke: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
     fillStyle: '',
     strokeStyle: '',
     lineWidth: 1,
+    shadowBlur: 0,
+    shadowColor: '',
   };
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx2d as unknown as CanvasRenderingContext2D);
   return ctx2d;
@@ -39,7 +43,6 @@ describe('WaveformRecorderComponent', () => {
     fixture.componentInstance.analyser = null;
     fixture.detectChanges();
     expect(ctx2d.fillRect).toHaveBeenCalled();
-    expect(ctx2d.stroke).not.toHaveBeenCalled();
   });
 
   it('draws waveform when analyser is provided', () => {

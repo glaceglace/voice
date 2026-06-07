@@ -11,7 +11,7 @@ export class WaveformCanvasComponent implements OnChanges, OnInit, OnDestroy {
   @ViewChild('canvas', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
 
   @Input() peaks: PeakSample[] | null = null;
-  @Input() color = '#1a73e8';
+  @Input() color = '#e8a838';
   @Input() loading = false;
   @Input() amplitudeScale = 1.0;
 
@@ -40,15 +40,21 @@ export class WaveformCanvasComponent implements OnChanges, OnInit, OnDestroy {
     const ctx = canvas.getContext('2d')!;
     ctx.scale(dpr, dpr);
 
-    // background — transparent so clip-block bg shows
     ctx.clearRect(0, 0, w, h);
 
     if (this.loading) {
-      ctx.fillStyle = 'rgba(255,255,255,0.04)';
+      ctx.fillStyle = 'rgba(255,255,255,0.03)';
       ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = 'rgba(255,255,255,0.3)';
-      ctx.font = '10px Roboto, sans-serif';
-      ctx.fillText('Loading…', 6, h / 2 + 4);
+
+      const dotCount = Math.floor(w / 10);
+      ctx.fillStyle = this.hexToRgba(this.color, 0.2);
+      for (let i = 0; i < dotCount; i++) {
+        const x = i * 10 + 5;
+        const y = h / 2;
+        ctx.beginPath();
+        ctx.arc(x, y, 1, 0, Math.PI * 2);
+        ctx.fill();
+      }
       return;
     }
 
@@ -58,23 +64,29 @@ export class WaveformCanvasComponent implements OnChanges, OnInit, OnDestroy {
     const mid = h / 2;
     const step = w / peaks.length;
 
-    // gradient fill — track color fading to transparent
-    const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, this.hexToRgba(this.color, 0.7));
-    grad.addColorStop(0.5, this.hexToRgba(this.color, 0.4));
-    grad.addColorStop(1, this.hexToRgba(this.color, 0.7));
-
-    ctx.fillStyle = grad;
+    // ── fill bars ──
     for (let i = 0; i < peaks.length; i++) {
       const x = i * step;
       const scaledMax = Math.max(-1, Math.min(1, peaks[i].max * this.amplitudeScale));
       const scaledMin = Math.max(-1, Math.min(1, peaks[i].min * this.amplitudeScale));
       const topY = mid - scaledMax * mid;
       const botY = mid - scaledMin * mid;
-      ctx.fillRect(x, topY, Math.max(1, step - 0.3), Math.max(1, botY - topY));
+      const barH = Math.max(1, botY - topY);
+      const barW = Math.max(1, step - 0.5);
+
+      // per-bar vertical gradient: bright in center, fade toward extremes
+      const barGrad = ctx.createLinearGradient(0, topY, 0, topY + barH);
+      barGrad.addColorStop(0,   this.hexToRgba(this.color, 0.3));
+      barGrad.addColorStop(0.5, this.hexToRgba(this.color, 0.65));
+      barGrad.addColorStop(1,   this.hexToRgba(this.color, 0.3));
+      ctx.fillStyle = barGrad;
+      ctx.fillRect(x, topY, barW, barH);
     }
 
-    // bright peak line
+    // ── bright top peak outline with glow ──
+    ctx.save();
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = this.hexToRgba(this.color, 0.55);
     ctx.strokeStyle = this.hexToRgba(this.color, 0.95);
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -85,6 +97,28 @@ export class WaveformCanvasComponent implements OnChanges, OnInit, OnDestroy {
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
+    ctx.stroke();
+    ctx.restore();
+
+    // ── dim bottom peak outline ──
+    ctx.strokeStyle = this.hexToRgba(this.color, 0.4);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < peaks.length; i++) {
+      const x = i * step + step / 2;
+      const scaledMin = Math.max(-1, Math.min(1, peaks[i].min * this.amplitudeScale));
+      const y = mid - scaledMin * mid;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // ── center line ──
+    ctx.strokeStyle = this.hexToRgba(this.color, 0.08);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, mid);
+    ctx.lineTo(w, mid);
     ctx.stroke();
   }
 

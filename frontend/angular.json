@@ -30,6 +30,7 @@
               }
             ],
             "styles": [
+              "node_modules/@phosphor-icons/web/src/light/style.css",
               "src/styles.scss"
             ]
           },

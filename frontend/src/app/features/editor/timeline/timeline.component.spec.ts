@@ -23,9 +23,11 @@ describe('TimelineComponent', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
       scale: vi.fn(), clearRect: vi.fn(), fillRect: vi.fn(),
       beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
-      stroke: vi.fn(), fillText: vi.fn(),
+      stroke: vi.fn(), fill: vi.fn(), arc: vi.fn(), fillText: vi.fn(),
+      save: vi.fn(), restore: vi.fn(),
       createLinearGradient: vi.fn().mockReturnValue({ addColorStop: vi.fn() }),
       fillStyle: '', strokeStyle: '', lineWidth: 1, font: '',
+      shadowBlur: 0, shadowColor: '', textBaseline: '',
     } as unknown as CanvasRenderingContext2D);
 
     await TestBed.configureTestingModule({
@@ -51,8 +53,8 @@ describe('TimelineComponent', () => {
   });
 
   it('trackColor cycles through track colors', () => {
-    expect(comp.trackColor(0)).toBe('#1a73e8');
-    expect(comp.trackColor(10)).toBe('#1a73e8'); // wraps at length=10
+    expect(comp.trackColor(0)).toBe('#4a90d9');
+    expect(comp.trackColor(10)).toBe('#4a90d9'); // wraps at length=10
   });
 
   it('clipLabel shows name and duration', () => {

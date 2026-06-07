@@ -1,9 +1,9 @@
-import { Component, ElementRef, Input, OnDestroy, OnInit, ViewChild, effect } from '@angular/core';
+import { Component, ElementRef, Input, OnDestroy, OnInit, ViewChild } from '@angular/core';
 
 @Component({
   selector: 'app-waveform-recorder',
   standalone: true,
-  template: `<canvas #canvas style="width:100%;height:100%;display:block;background:#0a0a0a;"></canvas>`,
+  template: `<canvas #canvas style="width:100%;height:100%;display:block;background:#0a0c0e;"></canvas>`,
 })
 export class WaveformRecorderComponent implements OnInit, OnDestroy {
   @ViewChild('canvas', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
@@ -33,14 +33,26 @@ export class WaveformRecorderComponent implements OnInit, OnDestroy {
       canvas.height = h * devicePixelRatio;
       ctx.scale(devicePixelRatio, devicePixelRatio);
 
-      ctx.fillStyle = '#0a0a0a';
+      ctx.fillStyle = '#0a0c0e';
       ctx.fillRect(0, 0, w, h);
+
+      // center line
+      ctx.strokeStyle = 'rgba(232, 168, 56, 0.08)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, h / 2);
+      ctx.lineTo(w, h / 2);
+      ctx.stroke();
 
       if (!this.analyser) return;
 
       this.analyser.getFloatTimeDomainData(this.buf);
 
-      ctx.strokeStyle = '#4caf50';
+      // glow pass
+      ctx.save();
+      ctx.shadowBlur = 6;
+      ctx.shadowColor = 'rgba(232, 168, 56, 0.4)';
+      ctx.strokeStyle = 'rgba(232, 168, 56, 0.9)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
 
@@ -53,6 +65,7 @@ export class WaveformRecorderComponent implements OnInit, OnDestroy {
         x += sliceW;
       }
       ctx.stroke();
+      ctx.restore();
     };
 
     draw();

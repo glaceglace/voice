@@ -1,7 +1,5 @@
 import { Component, EventEmitter, Input, Output, inject } from '@angular/core';
 import { MatSliderModule } from '@angular/material/slider';
-import { MatIconModule } from '@angular/material/icon';
-import { MatButtonModule } from '@angular/material/button';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { ProjectService } from '../../../core/services/project.service';
 import { FileService } from '../../../core/services/file.service';
@@ -10,48 +8,52 @@ import type { Track } from '../../../core/models/project.model';
 @Component({
   selector: 'app-track-header',
   standalone: true,
-  imports: [MatSliderModule, MatIconModule, MatButtonModule, MatTooltipModule],
+  imports: [MatSliderModule, MatTooltipModule],
   template: `
     <div class="track-header" [style.--color]="color" (contextmenu)="onHeaderContextMenu($event)">
       <div class="color-stripe"></div>
-      <div class="header-content">
-        <div class="track-name">{{ track.name }}</div>
-        <div class="controls">
-          <button mat-icon-button class="ctrl-btn"
-            [class.muted]="track.muted"
-            (click)="toggleMute()"
-            [matTooltip]="track.muted ? 'Unmute' : 'Mute'">
-            <mat-icon>{{ track.muted ? 'volume_off' : 'volume_up' }}</mat-icon>
-          </button>
-          <button mat-icon-button class="ctrl-btn"
-            [class.solo]="track.solo"
-            (click)="toggleSolo()"
-            matTooltip="Solo">
-            <mat-icon>headphones</mat-icon>
-          </button>
-          <button mat-icon-button class="ctrl-btn import-btn"
-            (click)="importFile()"
-            matTooltip="Import audio file">
-            <mat-icon>upload_file</mat-icon>
-          </button>
-          <button mat-icon-button class="ctrl-btn delete-btn"
-            (click)="deleteTrack()"
-            matTooltip="Delete track">
-            <mat-icon>delete_outline</mat-icon>
-          </button>
+      <div class="header-body">
+
+        <div class="top-row">
+          <span class="track-name">{{ track.name }}</span>
+          <div class="controls">
+            <button class="ctrl-btn" [class.muted]="track.muted"
+              [matTooltip]="track.muted ? 'Unmute' : 'Mute'"
+              (click)="toggleMute()">
+              <i class="ph-light" [class.ph-speaker-slash]="track.muted" [class.ph-speaker-high]="!track.muted"></i>
+            </button>
+            <button class="ctrl-btn" [class.solo]="track.solo"
+              matTooltip="Solo"
+              (click)="toggleSolo()">
+              <i class="ph-light ph-headphones"></i>
+            </button>
+            <button class="ctrl-btn import-btn"
+              matTooltip="Import audio file"
+              (click)="importFile()">
+              <i class="ph-light ph-upload-simple"></i>
+            </button>
+            <button class="ctrl-btn delete-btn"
+              matTooltip="Delete track"
+              (click)="deleteTrack()">
+              <i class="ph-light ph-trash-simple"></i>
+            </button>
+          </div>
         </div>
-        <div class="volume-row">
-          <mat-icon class="vol-icon">volume_down</mat-icon>
-          <mat-slider min="0" max="2" step="0.05" class="vol-slider" [disabled]="track.muted">
+
+        <div class="slider-row">
+          <i class="ph-light ph-speaker-low row-icon" matTooltip="Volume"></i>
+          <mat-slider min="0" max="2" step="0.05" class="track-slider" [disabled]="track.muted">
             <input matSliderThumb [value]="track.volume" (valueChange)="setVolume($event)" />
           </mat-slider>
         </div>
-        <div class="gain-row">
-          <mat-icon class="vol-icon" matTooltip="Visual gain">show_chart</mat-icon>
-          <mat-slider min="0.5" max="3" step="0.1" class="vol-slider">
+
+        <div class="slider-row">
+          <i class="ph-light ph-chart-line-up row-icon" matTooltip="Visual gain"></i>
+          <mat-slider min="0.5" max="3" step="0.1" class="track-slider">
             <input matSliderThumb [value]="amplitudeScale" (valueChange)="onAmplitudeScale($event)" />
           </mat-slider>
         </div>
+
       </div>
     </div>
   `,
@@ -63,72 +65,115 @@ import type { Track } from '../../../core/models/project.model';
     }
 
     .color-stripe {
-      width: 3px;
+      width: 2px;
       flex-shrink: 0;
-      background: var(--color, #1a73e8);
+      background: var(--color, var(--accent));
+      opacity: 0.75;
+      transition: opacity 0.15s;
     }
+    .track-header:hover .color-stripe { opacity: 1; }
 
-    .header-content {
+    .header-body {
       flex: 1;
       display: flex;
       flex-direction: column;
       justify-content: center;
-      padding: 6px 8px 4px 4px;
+      padding: 5px 6px 5px 8px;
       gap: 2px;
       overflow: hidden;
+      min-width: 0;
+    }
+
+    /* ── top row: name + controls ── */
+    .top-row {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      min-width: 0;
     }
 
     .track-name {
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text-primary);
+      font-family: 'Instrument Sans', sans-serif;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      flex: 1;
+      min-width: 0;
     }
 
     .controls {
       display: flex;
       gap: 0;
+      flex-shrink: 0;
     }
 
+    /* ── icon buttons ── */
     .ctrl-btn {
-      --mdc-icon-button-state-layer-size: 32px;
-      --mdc-icon-button-icon-size: 18px;
-      mat-icon { color: var(--text-muted); }
-    }
-
-    .ctrl-btn.muted mat-icon { color: #ff9800; }
-    .ctrl-btn.solo mat-icon { color: #4caf50; }
-    .import-btn mat-icon { color: var(--accent); }
-    .delete-btn { opacity: 0.3; transition: opacity 0.15s; }
-    .track-header:hover .delete-btn { opacity: 1; }
-    .delete-btn mat-icon { color: #f44336; }
-
-    .volume-row, .gain-row {
       display: flex;
       align-items: center;
-      gap: 2px;
-    }
-
-    .vol-icon {
-      font-size: 14px;
-      width: 14px;
-      height: 14px;
-      flex-shrink: 0;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      border-radius: 4px;
+      cursor: pointer;
       color: var(--text-muted);
+      transition: background 0.1s, color 0.1s;
+
+      i { font-size: 13px; }
+
+      &:hover {
+        background: var(--accent-glow);
+        color: var(--text-primary);
+      }
     }
 
-    .vol-slider {
+    .ctrl-btn.muted i { color: var(--accent); }
+    .ctrl-btn.solo i  { color: var(--ok); }
+
+    .import-btn {
+      color: rgba(232, 168, 56, 0.5);
+      &:hover { color: var(--accent); background: var(--accent-glow); }
+    }
+
+    .delete-btn {
+      opacity: 0;
+      color: var(--warn);
+      transition: opacity 0.15s, background 0.1s, color 0.1s;
+    }
+    .track-header:hover .delete-btn { opacity: 0.5; }
+    .track-header:hover .delete-btn:hover { opacity: 1; background: rgba(192, 57, 43, 0.12); }
+
+    /* ── sliders ── */
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .row-icon {
+      font-size: 11px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+      width: 12px;
+    }
+
+    .track-slider {
       flex: 1;
-      --mat-slider-active-track-height: 2px;
-      --mat-slider-inactive-track-height: 2px;
+      min-width: 0;
     }
   `],
 })
 export class TrackHeaderComponent {
   @Input({ required: true }) track!: Track;
-  @Input() color = '#1a73e8';
+  @Input() color = '#e8a838';
   @Input() trackIndex = 0;
 
   @Output() amplitudeScaleChange = new EventEmitter<number>();
@@ -142,6 +187,7 @@ export class TrackHeaderComponent {
   toggleMute(): void { this.project.setTrackMute(this.track.id, !this.track.muted); }
   toggleSolo(): void { this.project.setTrackSolo(this.track.id, !this.track.solo); }
   setVolume(value: number): void { this.project.setTrackVolume(this.track.id, value); }
+
   deleteTrack(): void {
     if (window.confirm(`Delete "${this.track.name}"?`)) {
       this.project.removeTrack(this.track.id);

@@ -16,15 +16,22 @@ describe('WaveformCanvasComponent', () => {
       clearRect: vi.fn(),
       fillRect: vi.fn(),
       fillText: vi.fn(),
+      fill: vi.fn(),
+      arc: vi.fn(),
       beginPath: vi.fn(),
       moveTo: vi.fn(),
       lineTo: vi.fn(),
       stroke: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
       createLinearGradient: vi.fn().mockReturnValue({ addColorStop: vi.fn() }),
       fillStyle: '',
       strokeStyle: '',
       lineWidth: 1,
       font: '',
+      shadowBlur: 0,
+      shadowColor: '',
+      textBaseline: '',
     };
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(
       () => ctx2d as unknown as CanvasRenderingContext2D,
@@ -43,12 +50,12 @@ describe('WaveformCanvasComponent', () => {
     expect(fixture.componentInstance).toBeTruthy();
   });
 
-  it('draws loading text when loading=true', () => {
+  it('draws loading indicator when loading=true', () => {
     const fixture = TestBed.createComponent(WaveformCanvasComponent);
     fixture.componentRef.setInput('loading', true);
     fixture.componentRef.setInput('peaks', null);
     fixture.detectChanges();
-    expect(ctx2d['fillText']).toHaveBeenCalled();
+    expect(ctx2d['fillRect']).toHaveBeenCalled();
   });
 
   it('does nothing when peaks is null and not loading', () => {

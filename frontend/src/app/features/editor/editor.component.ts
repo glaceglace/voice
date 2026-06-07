@@ -31,7 +31,8 @@ import { PlaybackService } from '../../core/services/playback.service';
       @if (recorder.state() === 'recording') {
         <div class="recording-overlay">
           <div class="rec-label">
-            <span class="dot"></span> Recording…
+            <span class="dot"></span>
+            <span class="rec-text">REC</span>
           </div>
           <app-waveform-recorder [analyser]="recorder.analyserNode()" />
         </div>
@@ -63,11 +64,12 @@ import { PlaybackService } from '../../core/services/playback.service';
       color: var(--text-primary);
     }
 
+    /* ── recording oscilloscope strip ── */
     .recording-overlay {
-      height: 72px;
+      height: 68px;
       flex-shrink: 0;
-      background: #0a140a;
-      border-bottom: 1px solid #1a3a1a;
+      background: #0a0c0e;
+      border-bottom: 1px solid var(--border);
       display: flex;
       align-items: stretch;
     }
@@ -77,40 +79,50 @@ import { PlaybackService } from '../../core/services/playback.service';
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      width: 60px;
-      font-size: 10px;
-      font-weight: 600;
-      color: #f44336;
-      letter-spacing: 0.5px;
-      border-right: 1px solid #1a3a1a;
+      gap: 5px;
+      width: 56px;
+      flex-shrink: 0;
+      border-right: 1px solid var(--border);
     }
 
     .dot {
-      width: 8px;
-      height: 8px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
-      background: #f44336;
-      animation: blink 0.8s infinite;
+      background: #e74c3c;
+      box-shadow: 0 0 6px rgba(231, 76, 60, 0.6);
+      animation: flash 0.9s ease-in-out infinite;
     }
-    @keyframes blink { 0%, 100% { opacity: 1 } 50% { opacity: 0 } }
+
+    .rec-text {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      color: #e74c3c;
+    }
+
+    @keyframes flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.1; } }
 
     .timeline-wrap {
       flex: 1;
       overflow: hidden;
     }
 
+    /* ── status bar ── */
     .status-bar {
       display: flex;
       align-items: center;
-      gap: 16px;
-      padding: 0 16px;
-      height: 24px;
+      gap: 14px;
+      padding: 0 14px;
+      height: 20px;
       flex-shrink: 0;
       background: var(--panel-bg);
       border-top: 1px solid var(--border);
-      font-size: 11px;
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
       color: var(--text-muted);
+      letter-spacing: 0.06em;
     }
     .spacer { flex: 1; }
   `],
