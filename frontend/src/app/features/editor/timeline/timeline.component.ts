@@ -3,6 +3,7 @@ import {
   ViewChild, computed, effect, inject, signal
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { MatTooltipModule } from '@angular/material/tooltip';
 import { ProjectService } from '../../../core/services/project.service';
 import { EditActionsService } from '../../../core/services/edit-actions.service';
 import { FileService } from '../../../core/services/file.service';
@@ -33,7 +34,7 @@ export const TRACK_COLORS = [
 @Component({
   selector: 'app-timeline',
   standalone: true,
-  imports: [CommonModule, TimelineRulerComponent, WaveformCanvasComponent, TrackHeaderComponent, ContextMenuComponent],
+  imports: [CommonModule, TimelineRulerComponent, WaveformCanvasComponent, TrackHeaderComponent, ContextMenuComponent, MatTooltipModule],
   template: `
     <!-- ruler lives outside the scroll container so it never moves with content -->
     <div class="ruler-row">
@@ -44,6 +45,22 @@ export const TRACK_COLORS = [
           [scrollLeft]="scrollLeft()"
           [totalDuration]="project.totalDuration()"
         />
+      </div>
+      <!-- zoom + snap controls inline with ruler -->
+      <div class="ruler-controls">
+        <button class="ruler-ctrl-btn" matTooltip="Zoom out" (click)="zoomOut()">
+          <i class="ph-light ph-magnifying-glass-minus"></i>
+        </button>
+        <span class="ruler-zoom-val">{{ project.state().zoom }}<small>px/s</small></span>
+        <button class="ruler-ctrl-btn" matTooltip="Zoom in" (click)="zoomIn()">
+          <i class="ph-light ph-magnifying-glass-plus"></i>
+        </button>
+        <div class="ruler-ctrl-sep"></div>
+        <button class="ruler-ctrl-btn" [class.snap-active]="project.snapEnabled()"
+          [matTooltip]="project.snapEnabled() ? 'Snap on — click to disable' : 'Snap off — click to enable'"
+          (click)="project.toggleSnap()">
+          <i class="ph-light" [class.ph-magnet]="project.snapEnabled()" [class.ph-magnet-straight]="!project.snapEnabled()"></i>
+        </button>
       </div>
     </div>
 
@@ -90,6 +107,11 @@ export const TRACK_COLORS = [
                 [style.width.px]="clip.duration * project.state().zoom"
                 [style.--track-color]="trackColor(i)"
               >
+                <!-- drag handle — always visible on hover; initiates move without Alt -->
+                <div class="clip-drag-handle" title="Drag to move clip"
+                  (mousedown)="onDragHandleMouseDown($event, clip, track.id)">
+                  <i class="ph-light ph-dots-six-vertical"></i>
+                </div>
                 <app-waveform-canvas
                   [peaks]="clip.peakData"
                   [loading]="clip.isLoading"
@@ -98,9 +120,6 @@ export const TRACK_COLORS = [
                 />
                 <div class="clip-label">{{ clipLabel(clip) }}</div>
                 <button class="clip-delete-btn" (click)="deleteClip($event, clip.id)" title="Delete clip">×</button>
-                @if (altKeyDown()) {
-                  <div class="alt-drag-hint"><i class="ph-light ph-arrows-out-cardinal"></i></div>
-                }
               </div>
             }
 
@@ -136,8 +155,15 @@ export const TRACK_COLORS = [
       <!-- empty full-page hint if no tracks have clips -->
       @if (allEmpty()) {
         <div class="full-empty">
-          <i class="ph-light ph-music-note-simple empty-icon"></i>
-          <p>Drag &amp; drop audio files here or click <strong>Import</strong></p>
+          <i class="ph-light ph-microphone empty-icon"></i>
+          <p class="empty-heading">Ready to record</p>
+          <p class="empty-sub">Arm a track (●), then hit <strong>REC</strong> — or drop an audio file here</p>
+          <div class="empty-shortcuts">
+            <span class="shortcut-chip"><kbd>Space</kbd> Play / Pause</span>
+            <span class="shortcut-chip"><kbd>Ctrl+Z</kbd> Undo</span>
+            <span class="shortcut-chip"><kbd>Ctrl+X</kbd> Cut selection</span>
+            <span class="shortcut-chip"><kbd>Alt+drag</kbd> Move clip</span>
+          </div>
         </div>
       }
 
@@ -182,9 +208,10 @@ export const TRACK_COLORS = [
       background: var(--editor-bg);
       cursor: default;
       user-select: none;
+      padding: 8px 0;
       &::-webkit-scrollbar { width: 5px; height: 0; }
       &::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
-      &::-webkit-scrollbar-thumb:hover { background: #3a3e4e; }
+      &::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
       scrollbar-color: var(--border-strong) transparent;
       scrollbar-width: thin;
     }
@@ -193,7 +220,8 @@ export const TRACK_COLORS = [
     .ruler-row {
       display: flex;
       flex-shrink: 0;
-      background: var(--panel-bg);
+      align-items: stretch;
+      background: var(--panel-bg2);
       border-bottom: 1px solid var(--border);
       z-index: 20;
     }
@@ -202,15 +230,65 @@ export const TRACK_COLORS = [
       min-width: clamp(140px, 13vw, 220px);
       flex-shrink: 0;
       background: var(--panel-bg);
+      border-right: 1px solid var(--border);
     }
     .ruler-wrap { flex: 1; overflow: hidden; }
+
+    /* ── ruler zoom/snap controls ── */
+    .ruler-controls {
+      display: flex;
+      align-items: center;
+      gap: 1px;
+      padding: 0 6px;
+      flex-shrink: 0;
+      border-left: 1px solid var(--border);
+    }
+    .ruler-ctrl-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border: none;
+      background: transparent;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: background 0.12s, color 0.12s;
+      i { font-size: 13px; }
+      &:hover { background: var(--accent-glow); color: var(--text-primary); }
+    }
+    .snap-active {
+      background: var(--accent-dim);
+      i { color: var(--accent); }
+      &:hover { background: var(--accent-dim) !important; color: var(--accent) !important; }
+    }
+    .ruler-zoom-val {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--text-muted);
+      min-width: 50px;
+      text-align: center;
+      small { font-size: 8px; opacity: 0.6; margin-left: 1px; }
+    }
+    .ruler-ctrl-sep {
+      width: 1px;
+      height: 16px;
+      background: var(--border);
+      margin: 0 3px;
+    }
 
     /* ── track rows ── */
     .track-row {
       display: flex;
       flex: 1;
       min-height: 12%;
-      border-bottom: 1px solid var(--border);
+      margin: 0 8px 6px 8px;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      border: 1px solid var(--border);
+      background: var(--panel-bg);
     }
 
     .track-header-wrap {
@@ -265,7 +343,7 @@ export const TRACK_COLORS = [
         border-color: var(--accent);
         box-shadow:
           0 0 0 1px var(--accent-dim),
-          0 0 10px rgba(232, 168, 56, 0.08);
+          0 0 8px rgba(192, 57, 43, 0.10);
       }
 
       &.is-dragging { opacity: 0.3; }
@@ -276,28 +354,9 @@ export const TRACK_COLORS = [
       }
     }
 
-    /* Alt-hold cursor & move hint */
+    /* Alt-hold cursor: grab cursor while Alt is held anywhere on clips */
     .alt-active .clip-block { cursor: grab; }
     .alt-active .clip-block:active { cursor: grabbing; }
-
-    .alt-drag-hint {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(0, 0, 0, 0.5);
-      border-radius: 50%;
-      width: 26px;
-      height: 26px;
-      i {
-        font-size: 14px;
-        color: rgba(255, 255, 255, 0.85);
-      }
-    }
 
     /* Drag ghost */
     .clip-drag-ghost {
@@ -320,7 +379,7 @@ export const TRACK_COLORS = [
       background: var(--accent);
       pointer-events: none;
       z-index: 20;
-      box-shadow: 0 0 6px rgba(232, 168, 56, 0.5);
+      box-shadow: 0 0 5px rgba(192, 57, 43, 0.4);
       &::before {
         content: '';
         position: absolute;
@@ -330,37 +389,63 @@ export const TRACK_COLORS = [
         height: 7px;
         border-radius: 50%;
         background: var(--accent);
-        box-shadow: 0 0 6px rgba(232, 168, 56, 0.6);
+        box-shadow: 0 0 5px rgba(192, 57, 43, 0.5);
       }
     }
+
+    /* ── clip drag handle ── */
+    .clip-drag-handle {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: grab;
+      opacity: 0;
+      transition: opacity 0.12s;
+      z-index: 4;
+      background: linear-gradient(to right, color-mix(in srgb, var(--track-color, #4a90d9) 30%, transparent), transparent);
+      border-radius: 3px 0 0 3px;
+
+      i {
+        font-size: 11px;
+        color: color-mix(in srgb, var(--track-color, #4a90d9) 90%, #000);
+      }
+
+      &:active { cursor: grabbing; }
+    }
+    .clip-block:hover .clip-drag-handle { opacity: 1; }
 
     .clip-label {
       position: absolute;
       top: 3px;
-      left: 6px;
+      left: 18px;
       font-family: 'Instrument Sans', sans-serif;
       font-size: 9px;
-      font-weight: 500;
+      font-weight: 600;
       letter-spacing: 0.04em;
-      color: rgba(255, 255, 255, 0.5);
+      color: color-mix(in srgb, var(--track-color, #4a90d9) 85%, #000);
       pointer-events: none;
       white-space: nowrap;
       overflow: hidden;
-      max-width: calc(100% - 22px);
+      max-width: calc(100% - 32px);
     }
 
     .clip-delete-btn {
       position: absolute;
       top: 3px;
       right: 3px;
-      width: 15px;
-      height: 15px;
+      width: 16px;
+      height: 16px;
       padding: 0;
       border: none;
       border-radius: 3px;
-      background: rgba(0, 0, 0, 0.45);
-      color: rgba(255, 255, 255, 0.6);
-      font-size: 11px;
+      background: rgba(255, 255, 255, 0.7);
+      color: var(--text-secondary);
+      font-size: 12px;
       line-height: 1;
       cursor: pointer;
       opacity: 0;
@@ -369,7 +454,7 @@ export const TRACK_COLORS = [
       display: flex;
       align-items: center;
       justify-content: center;
-      &:hover { background: rgba(192, 57, 43, 0.75); color: #fff; }
+      &:hover { background: var(--accent); color: #fff; }
     }
     .clip-block:hover .clip-delete-btn { opacity: 1; }
 
@@ -393,7 +478,7 @@ export const TRACK_COLORS = [
       cursor: ew-resize;
       pointer-events: auto;
       z-index: 2;
-      &:hover { background: rgba(232, 168, 56, 0.2); }
+      &:hover { background: rgba(192, 57, 43, 0.15); }
     }
     .sel-handle-left { left: 0; }
     .sel-handle-right { right: 0; }
@@ -425,8 +510,51 @@ export const TRACK_COLORS = [
       strong { color: var(--accent); font-weight: 500; }
     }
     .empty-icon {
-      font-size: 40px;
-      color: var(--border-strong);
+      font-size: 44px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .empty-heading {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      letter-spacing: 0.03em;
+    }
+    .empty-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      max-width: 320px;
+      text-align: center;
+      line-height: 1.6;
+    }
+    .empty-shortcuts {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-top: 8px;
+    }
+    .shortcut-chip {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 3px 8px;
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+
+      kbd {
+        font-family: 'DM Mono', monospace;
+        font-size: 9px;
+        background: var(--panel-bg2);
+        border: 1px solid var(--border-strong);
+        border-radius: 3px;
+        padding: 1px 4px;
+        color: var(--text-secondary);
+      }
     }
 
     /* ── playhead ── */
@@ -438,7 +566,7 @@ export const TRACK_COLORS = [
       background: var(--playhead);
       pointer-events: none;
       z-index: 30;
-      box-shadow: 0 0 8px rgba(255, 107, 53, 0.35);
+      box-shadow: 0 0 6px rgba(192, 57, 43, 0.30);
       &::before {
         content: '';
         position: absolute;
@@ -449,7 +577,7 @@ export const TRACK_COLORS = [
         border-left: 4px solid transparent;
         border-right: 4px solid transparent;
         border-top: 7px solid var(--playhead);
-        filter: drop-shadow(0 0 3px rgba(255, 107, 53, 0.5));
+        filter: drop-shadow(0 0 2px rgba(192, 57, 43, 0.4));
       }
     }
 
@@ -473,8 +601,8 @@ export const TRACK_COLORS = [
       background: var(--border-strong);
       cursor: grab;
       transition: background 0.1s;
-      &:hover { background: #3a3e4e; }
-      &:active { cursor: grabbing; background: #4a4e5e; }
+      &:hover { background: var(--text-muted); }
+      &:active { cursor: grabbing; background: var(--text-secondary); }
     }
   `],
 })
@@ -571,6 +699,14 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
     this.amplitudeScales = { ...this.amplitudeScales, [trackId]: scale };
   }
 
+  zoomIn(): void {
+    this.project.setZoom(Math.min(500, this.project.state().zoom + 20));
+  }
+
+  zoomOut(): void {
+    this.project.setZoom(Math.max(20, this.project.state().zoom - 20));
+  }
+
   ngOnInit(): void {
     this.rafId = requestAnimationFrame(this.noop.bind(this));
   }
@@ -599,6 +735,22 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
     window.removeEventListener('mousemove', this.hThumbOnMove);
     window.removeEventListener('mouseup', this.hThumbOnUp);
+  }
+
+  onDragHandleMouseDown(e: MouseEvent, clip: Clip, trackId: string): void {
+    e.preventDefault();
+    e.stopPropagation();
+    const { time } = this.hitTest(e);
+    this.clipDrag = {
+      clipId: clip.id,
+      sourceTrackId: trackId,
+      duration: clip.duration,
+      grabOffsetTime: time - clip.startTime,
+      previewStartTime: clip.startTime,
+      previewTrackId: trackId,
+      snapIndicatorX: null,
+      displacedClips: [],
+    };
   }
 
   onScroll(e: Event): void {

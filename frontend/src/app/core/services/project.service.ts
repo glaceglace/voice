@@ -50,12 +50,16 @@ export class ProjectService {
 
   // --- tracks ---
 
+  readonly armedTrackId = computed(() =>
+    this._state().tracks.find(t => t.armed)?.id ?? null
+  );
+
   addTrack(): void {
     this.mutate(s => ({
       ...s,
       tracks: [...s.tracks, {
         id: uuidv4(), name: `Track ${s.tracks.length + 1}`,
-        volume: 1, muted: false, solo: false, clips: [],
+        volume: 1, muted: false, solo: false, armed: false, clips: [],
       }],
     }));
   }
@@ -82,6 +86,13 @@ export class ProjectService {
     this._state.update(s => ({
       ...s,
       tracks: s.tracks.map(t => t.id === trackId ? { ...t, solo } : t),
+    }));
+  }
+
+  setTrackArmed(trackId: string, armed: boolean): void {
+    this._state.update(s => ({
+      ...s,
+      tracks: s.tracks.map(t => ({ ...t, armed: t.id === trackId ? armed : false })),
     }));
   }
 
@@ -254,7 +265,11 @@ export class ProjectService {
   private loadFromStorage(): ProjectState | null {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? (JSON.parse(raw) as ProjectState) : null;
+      if (!raw) return null;
+      const state = JSON.parse(raw) as ProjectState;
+      // Migrate: older saved states lack `armed` on tracks
+      state.tracks = state.tracks.map(t => ({ ...t, armed: (t as { armed?: boolean }).armed ?? false }));
+      return state;
     } catch {
       return null;
     }

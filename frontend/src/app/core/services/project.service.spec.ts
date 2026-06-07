@@ -67,6 +67,30 @@ describe('ProjectService', () => {
     expect(svc.state().tracks[0].solo).toBe(true);
   });
 
+  it('setTrackArmed arms one track and disarms others', () => {
+    svc.addTrack();
+    const id0 = svc.state().tracks[0].id;
+    const id1 = svc.state().tracks[1].id;
+    svc.setTrackArmed(id0, true);
+    expect(svc.state().tracks[0].armed).toBe(true);
+    expect(svc.state().tracks[1].armed).toBe(false);
+    // arming a second track disarms the first
+    svc.setTrackArmed(id1, true);
+    expect(svc.state().tracks[0].armed).toBe(false);
+    expect(svc.state().tracks[1].armed).toBe(true);
+    // disarming returns all to false
+    svc.setTrackArmed(id1, false);
+    expect(svc.state().tracks[1].armed).toBe(false);
+  });
+
+  it('armedTrackId returns the id of the armed track', () => {
+    svc.addTrack();
+    expect(svc.armedTrackId()).toBeNull();
+    const id = svc.state().tracks[1].id;
+    svc.setTrackArmed(id, true);
+    expect(svc.armedTrackId()).toBe(id);
+  });
+
   // --- clips ---
   it('addClip adds a clip at the end of the track by default', () => {
     const trackId = svc.state().tracks[0].id;

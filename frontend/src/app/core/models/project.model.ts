@@ -4,6 +4,7 @@ export interface Track {
   volume: number;
   muted: boolean;
   solo: boolean;
+  armed: boolean;
   clips: Clip[];
 }
 
@@ -42,7 +43,7 @@ export interface ProjectState {
 export function defaultProjectState(): ProjectState {
   return {
     tracks: [
-      { id: 'track-1', name: 'Track 1', volume: 1, muted: false, solo: false, clips: [] },
+      { id: 'track-1', name: 'Track 1', volume: 1, muted: false, solo: false, armed: false, clips: [] },
     ],
     playheadPosition: 0,
     zoom: 100,

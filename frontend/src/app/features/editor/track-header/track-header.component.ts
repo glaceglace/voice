@@ -10,13 +10,19 @@ import type { Track } from '../../../core/models/project.model';
   standalone: true,
   imports: [MatSliderModule, MatTooltipModule],
   template: `
-    <div class="track-header" [style.--color]="color" (contextmenu)="onHeaderContextMenu($event)">
+    <div class="track-header" [style.--color]="color" [class.is-armed]="track.armed" (contextmenu)="onHeaderContextMenu($event)">
       <div class="color-stripe"></div>
       <div class="header-body">
 
         <div class="top-row">
           <span class="track-name">{{ track.name }}</span>
           <div class="controls">
+            <!-- ARM button: the record-target selector -->
+            <button class="ctrl-btn arm-btn" [class.armed]="track.armed"
+              [matTooltip]="track.armed ? 'Disarm — click REC to stop targeting this track' : 'Arm for recording — next REC will record here'"
+              (click)="toggleArm()">
+              <i class="ph-light ph-record"></i>
+            </button>
             <button class="ctrl-btn" [class.muted]="track.muted"
               [matTooltip]="track.muted ? 'Unmute' : 'Mute'"
               (click)="toggleMute()">
@@ -47,13 +53,6 @@ import type { Track } from '../../../core/models/project.model';
           </mat-slider>
         </div>
 
-        <div class="slider-row">
-          <i class="ph-light ph-chart-line-up row-icon" matTooltip="Visual gain"></i>
-          <mat-slider min="0.5" max="3" step="0.1" class="track-slider">
-            <input matSliderThumb [value]="amplitudeScale" (valueChange)="onAmplitudeScale($event)" />
-          </mat-slider>
-        </div>
-
       </div>
     </div>
   `,
@@ -65,10 +64,10 @@ import type { Track } from '../../../core/models/project.model';
     }
 
     .color-stripe {
-      width: 2px;
+      width: 4px;
       flex-shrink: 0;
       background: var(--color, var(--accent));
-      opacity: 0.75;
+      opacity: 0.8;
       transition: opacity 0.15s;
     }
     .track-header:hover .color-stripe { opacity: 1; }
@@ -78,8 +77,8 @@ import type { Track } from '../../../core/models/project.model';
       display: flex;
       flex-direction: column;
       justify-content: center;
-      padding: 5px 6px 5px 8px;
-      gap: 2px;
+      padding: 6px 8px 6px 10px;
+      gap: 4px;
       overflow: hidden;
       min-width: 0;
     }
@@ -88,17 +87,16 @@ import type { Track } from '../../../core/models/project.model';
     .top-row {
       display: flex;
       align-items: center;
-      gap: 2px;
+      gap: 4px;
       min-width: 0;
     }
 
     .track-name {
       font-family: 'Instrument Sans', sans-serif;
-      font-size: 10px;
+      font-size: 13px;
       font-weight: 600;
-      letter-spacing: 0.09em;
-      text-transform: uppercase;
-      color: var(--text-secondary);
+      letter-spacing: 0.01em;
+      color: var(--text-primary);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -108,8 +106,14 @@ import type { Track } from '../../../core/models/project.model';
 
     .controls {
       display: flex;
-      gap: 0;
+      gap: 1px;
       flex-shrink: 0;
+    }
+
+    /* ── armed state: highlight the whole header ── */
+    .track-header.is-armed {
+      background: rgba(192, 57, 43, 0.04);
+      .color-stripe { background: var(--accent); opacity: 1; }
     }
 
     /* ── icon buttons ── */
@@ -117,17 +121,17 @@ import type { Track } from '../../../core/models/project.model';
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 24px;
-      height: 24px;
+      width: 28px;
+      height: 28px;
       padding: 0;
       border: none;
       background: transparent;
-      border-radius: 4px;
+      border-radius: 5px;
       cursor: pointer;
       color: var(--text-muted);
       transition: background 0.1s, color 0.1s;
 
-      i { font-size: 13px; }
+      i { font-size: 14px; }
 
       &:hover {
         background: var(--accent-glow);
@@ -135,11 +139,42 @@ import type { Track } from '../../../core/models/project.model';
       }
     }
 
+    /* ARM button */
+    .arm-btn {
+      color: rgba(192, 57, 43, 0.35);
+      border: 1px solid transparent;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+
+      &:hover {
+        color: var(--accent);
+        background: var(--accent-dim);
+        border-color: rgba(192, 57, 43, 0.25);
+      }
+
+      &.armed {
+        color: var(--accent);
+        background: var(--accent-dim);
+        border-color: rgba(192, 57, 43, 0.45);
+        animation: arm-pulse 1.8s ease-in-out infinite;
+
+        &:hover {
+          background: rgba(192, 57, 43, 0.15);
+        }
+      }
+    }
+
+    @keyframes arm-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.3); }
+      50% { box-shadow: 0 0 0 4px rgba(192, 57, 43, 0); }
+    }
+
     .ctrl-btn.muted i { color: var(--accent); }
     .ctrl-btn.solo i  { color: var(--ok); }
 
     .import-btn {
-      color: rgba(232, 168, 56, 0.5);
+      color: var(--text-muted);
       &:hover { color: var(--accent); background: var(--accent-glow); }
     }
 
@@ -148,8 +183,8 @@ import type { Track } from '../../../core/models/project.model';
       color: var(--warn);
       transition: opacity 0.15s, background 0.1s, color 0.1s;
     }
-    .track-header:hover .delete-btn { opacity: 0.5; }
-    .track-header:hover .delete-btn:hover { opacity: 1; background: rgba(192, 57, 43, 0.12); }
+    .track-header:hover .delete-btn { opacity: 0.4; }
+    .track-header:hover .delete-btn:hover { opacity: 1; background: var(--accent-dim); }
 
     /* ── sliders ── */
     .slider-row {
@@ -184,6 +219,7 @@ export class TrackHeaderComponent {
   private project = inject(ProjectService);
   private fileService = inject(FileService);
 
+  toggleArm(): void { this.project.setTrackArmed(this.track.id, !this.track.armed); }
   toggleMute(): void { this.project.setTrackMute(this.track.id, !this.track.muted); }
   toggleSolo(): void { this.project.setTrackSolo(this.track.id, !this.track.solo); }
   setVolume(value: number): void { this.project.setTrackVolume(this.track.id, value); }

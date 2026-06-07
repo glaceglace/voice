@@ -55,6 +55,15 @@ describe('TrackHeaderComponent', () => {
     expect(project.state().tracks[0].solo).toBe(false);
   });
 
+  it('toggleArm arms and disarms the track', () => {
+    const { comp } = createComponent();
+    comp.toggleArm();
+    expect(project.state().tracks[0].armed).toBe(true);
+    comp.track = { ...comp.track, armed: true };
+    comp.toggleArm();
+    expect(project.state().tracks[0].armed).toBe(false);
+  });
+
   it('deleteTrack removes the track when confirmed', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     project.addTrack();
@@ -92,8 +101,9 @@ describe('TrackHeaderComponent', () => {
   it('clicking mute button calls toggleMute via DOM', () => {
     const { fixture } = createComponent();
     const buttons = fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLElement>;
-    if (buttons.length >= 1) {
-      buttons[0].click();
+    // buttons[0]=arm, buttons[1]=mute, buttons[2]=solo
+    if (buttons.length >= 2) {
+      buttons[1].click();
       fixture.detectChanges();
     }
     expect(project.state().tracks[0].muted).toBe(true);
@@ -102,8 +112,9 @@ describe('TrackHeaderComponent', () => {
   it('clicking solo button calls toggleSolo via DOM', () => {
     const { fixture } = createComponent();
     const buttons = fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLElement>;
-    if (buttons.length >= 2) {
-      buttons[1].click();
+    // buttons[0]=arm, buttons[1]=mute, buttons[2]=solo
+    if (buttons.length >= 3) {
+      buttons[2].click();
       fixture.detectChanges();
     }
     expect(project.state().tracks[0].solo).toBe(true);

@@ -202,7 +202,7 @@ describe('ToolbarComponent', () => {
     recorder.state.set('recording');
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('.rec-active')).not.toBeNull();
+    expect(el.querySelector('.stop-rec-btn')).not.toBeNull();
   });
 
   it('shows processing text when recorder state is processing', () => {
@@ -236,7 +236,7 @@ describe('ToolbarComponent', () => {
   it('clicking stop-recording button calls stopRecording', () => {
     recorder.state.set('recording');
     fixture.detectChanges();
-    const stopBtn = fixture.nativeElement.querySelector('.rec-active') as HTMLElement;
+    const stopBtn = fixture.nativeElement.querySelector('.stop-rec-btn') as HTMLElement;
     if (stopBtn) { stopBtn.click(); fixture.detectChanges(); }
     expect(recorder.stopRecording).toHaveBeenCalled();
   });
@@ -316,22 +316,10 @@ describe('ToolbarComponent', () => {
     expect(playback.stop).toHaveBeenCalled();
   });
 
-  it('snap toggle button calls project.toggleSnap', () => {
-    const toggleSpy = vi.spyOn(project, 'toggleSnap');
-    const el = fixture.nativeElement as HTMLElement;
-    const btn = el.querySelector('.snap-btn') as HTMLElement;
-    expect(btn).toBeTruthy();
-    btn?.click();
-    expect(toggleSpy).toHaveBeenCalled();
-  });
-
-  it('snap toggle shows magnet icon when enabled and magnet-straight when disabled', () => {
-    const el = fixture.nativeElement as HTMLElement;
-    const snapIcon = () => el.querySelector('i.ph-magnet, i.ph-magnet-straight');
-    expect(snapIcon()?.classList.contains('ph-magnet')).toBe(true);
+  it('snap toggle calls project.toggleSnap', () => {
+    const before = project.snapEnabled();
     project.toggleSnap();
-    fixture.detectChanges();
-    expect(snapIcon()?.classList.contains('ph-magnet-straight')).toBe(true);
+    expect(project.snapEnabled()).toBe(!before);
   });
 
 });

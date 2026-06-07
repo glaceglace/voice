@@ -27,7 +27,7 @@ export class TimelineRulerComponent implements OnChanges {
     const ctx = canvas.getContext('2d')!;
     ctx.scale(dpr, dpr);
 
-    ctx.fillStyle = '#13151a';
+    ctx.fillStyle = '#F0EDE8';
     ctx.fillRect(0, 0, w, h);
 
     const startSec = this.scrollLeft / this.zoom;
@@ -37,7 +37,7 @@ export class TimelineRulerComponent implements OnChanges {
     const minPx = 64;
     const interval = intervals.find(i => i * this.zoom >= minPx) ?? 300;
 
-    ctx.font = '400 9px "DM Mono", monospace';
+    ctx.font = '500 9px "DM Mono", monospace';
     ctx.textBaseline = 'middle';
 
     let t = Math.floor(startSec / interval) * interval;
@@ -48,7 +48,7 @@ export class TimelineRulerComponent implements OnChanges {
       const isZero = t < 0.0001;
 
       // tick
-      ctx.strokeStyle = isZero ? 'rgba(232, 168, 56, 0.3)' : 'rgba(232, 168, 56, 0.15)';
+      ctx.strokeStyle = isZero ? 'rgba(192, 57, 43, 0.5)' : 'rgba(26, 25, 21, 0.18)';
       ctx.lineWidth = isZero ? 1.5 : 1;
       ctx.beginPath();
       ctx.moveTo(x, isZero ? h * 0.3 : h * 0.55);
@@ -57,7 +57,7 @@ export class TimelineRulerComponent implements OnChanges {
 
       // label
       if (x > 2) {
-        ctx.fillStyle = isZero ? 'rgba(232, 168, 56, 0.6)' : 'rgba(200, 180, 140, 0.45)';
+        ctx.fillStyle = isZero ? 'rgba(192, 57, 43, 0.75)' : 'rgba(107, 101, 96, 0.9)';
         ctx.fillText(this.fmt(t), x + 4, h * 0.38);
       }
 
@@ -65,7 +65,7 @@ export class TimelineRulerComponent implements OnChanges {
     }
 
     // bottom edge
-    ctx.strokeStyle = 'rgba(232, 168, 56, 0.08)';
+    ctx.strokeStyle = 'rgba(226, 221, 214, 1)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, h - 0.5);

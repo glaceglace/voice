@@ -23,65 +23,76 @@ import { take } from 'rxjs/operators';
 
       <div class="sep"></div>
 
-      <!-- PHASE 1: CAPTURE — record is the hero action for journalists -->
+      <!-- RECORD — hero action, solid red -->
       @if (recorder.state() === 'recording') {
-        <button class="tb-pill rec-active-pill" matTooltip="Stop recording" (click)="stopRecording()">
+        <button class="hero-btn stop-rec-btn" matTooltip="Stop recording" (click)="stopRecording()">
           <i class="ph-light ph-stop-circle"></i>
           <span>STOP</span>
         </button>
       } @else {
-        <button class="tb-pill rec-pill"
-          matTooltip="Record from microphone"
+        <button class="hero-btn rec-btn"
+          [matTooltip]="recTooltip()"
           (click)="startRecording()"
           [disabled]="recorder.state() === 'processing' || playback.isPlaying()">
           <i class="ph-light ph-record"></i>
-          <span>REC</span>
+          <span>RECORD</span>
         </button>
       }
 
       <div class="sep"></div>
 
-      <!-- PHASE 2: REVIEW — transport for listening back -->
-      <div class="btn-group">
-        <button class="tb-btn rewind-btn" matTooltip="Rewind to start" (click)="rewind()"
+      <!-- TRANSPORT -->
+      <div class="transport-group">
+        <button class="transport-btn rewind-btn" matTooltip="Rewind to start" (click)="rewind()"
           [disabled]="recorder.state() === 'recording'">
           <i class="ph-light ph-skip-back"></i>
+          <span class="transport-label">Rewind</span>
         </button>
-
-        <button class="tb-btn play-btn"
+        <button class="transport-btn play-btn"
           [matTooltip]="playback.isPlaying() ? 'Pause (Space)' : 'Play (Space)'"
           (click)="togglePlay()"
           [disabled]="recorder.state() === 'recording'">
           <i class="ph-light" [class.ph-pause]="playback.isPlaying()" [class.ph-play]="!playback.isPlaying()"></i>
+          <span class="transport-label">{{ playback.isPlaying() ? 'Pause' : 'Play' }}</span>
         </button>
-
-        <button class="tb-btn stop-btn" matTooltip="Stop" (click)="stop()"
+        <button class="transport-btn" matTooltip="Stop" (click)="stop()"
           [disabled]="!playback.isPlaying()">
           <i class="ph-light ph-stop"></i>
+          <span class="transport-label">Stop</span>
         </button>
+      </div>
+
+      <!-- TIME DISPLAY — centered, prominent -->
+      <div class="time-display">
+        <span class="time-value">{{ project.state().playheadPosition | formatTime }}</span>
+        @if (recorder.state() === 'processing') {
+          <span class="processing processing-label">processing…</span>
+        }
       </div>
 
       <div class="sep"></div>
 
-      <!-- PHASE 3: EDIT — cut bad takes, undo mistakes -->
-      <div class="btn-group">
-        <button class="tb-btn cut-btn" matTooltip="Cut selected region (Ctrl+X)"
+      <!-- EDIT -->
+      <div class="edit-group">
+        <button class="edit-btn cut-btn" matTooltip="Cut selected region (Ctrl+X)"
           (click)="cutSelection()"
           [disabled]="!project.state().selection">
           <i class="ph-light ph-scissors"></i>
+          <span class="edit-label">CUT</span>
         </button>
-        <button class="tb-btn undo-btn" matTooltip="Undo (Ctrl+Z)"
+        <button class="edit-btn undo-btn" matTooltip="Undo (Ctrl+Z)"
           (click)="project.undo()"
           [disabled]="!project.canUndo()">
           <i class="ph-light ph-arrow-counter-clockwise"></i>
+          <span class="edit-label">UNDO</span>
         </button>
       </div>
 
       <div class="sep"></div>
 
-      <!-- project management: add track, new project -->
-      <div class="btn-group">
-        <button class="tb-btn add-track-btn" matTooltip="Add track" (click)="project.addTrack()">
+      <!-- PROJECT -->
+      <div class="project-group">
+        <button class="tb-btn" matTooltip="Add track" (click)="project.addTrack()">
           <i class="ph-light ph-plus"></i>
         </button>
         <button class="tb-btn danger-btn" matTooltip="New project — discard all changes" (click)="newProject()">
@@ -89,48 +100,13 @@ import { take } from 'rxjs/operators';
         </button>
       </div>
 
-      <div class="sep"></div>
-
-      <!-- snap -->
-      <button class="tb-btn snap-btn" [class.snap-on]="project.snapEnabled()"
-        [matTooltip]="project.snapEnabled() ? 'Snap enabled — click to disable' : 'Snap disabled — click to enable'"
-        (click)="project.toggleSnap()">
-        <i class="ph-light" [class.ph-magnet]="project.snapEnabled()" [class.ph-magnet-straight]="!project.snapEnabled()"></i>
-      </button>
-
-      <div class="sep"></div>
-
-      <!-- zoom -->
-      <div class="zoom-group">
-        <button class="tb-btn zoom-btn zoom-out-btn" matTooltip="Zoom out" (click)="zoomOut()">
-          <i class="ph-light ph-magnifying-glass-minus"></i>
-        </button>
-        <span class="zoom-val">{{ project.state().zoom }}<small>px/s</small></span>
-        <button class="tb-btn zoom-btn zoom-in-btn" matTooltip="Zoom in" (click)="zoomIn()">
-          <i class="ph-light ph-magnifying-glass-plus"></i>
-        </button>
-      </div>
-
       <div class="spacer"></div>
 
-      <!-- right cluster: status indicators + time + PHASE 4: EXPORT -->
-      <div class="status-right">
-        @if (recorder.state() === 'recording') {
-          <span class="rec-badge">
-            <span class="rec-dot"></span>
-            <span class="rec-label">REC</span>
-          </span>
-        }
-        @if (recorder.state() === 'processing') {
-          <span class="processing">processing…</span>
-        }
-        <span class="time-display">{{ project.state().playheadPosition | formatTime }}</span>
-        <div class="sep"></div>
-        <button class="tb-pill export-pill" matTooltip="Export audio" (click)="exportOpen.emit()">
-          <i class="ph-light ph-export"></i>
-          <span>EXPORT</span>
-        </button>
-      </div>
+      <!-- EXPORT — solid red, right-aligned -->
+      <button class="hero-btn export-btn" matTooltip="Export audio" (click)="exportOpen.emit()">
+        <i class="ph-light ph-export"></i>
+        <span>EXPORT</span>
+      </button>
 
     </div>
   `,
@@ -138,65 +114,125 @@ import { take } from 'rxjs/operators';
     .toolbar {
       display: flex;
       align-items: center;
-      gap: 1px;
-      padding: 0 14px;
+      gap: 2px;
+      padding: 0 16px;
       background: var(--panel-bg);
-      border-bottom: 1px solid var(--border);
-      height: 48px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+      height: 64px;
       flex-shrink: 0;
+      z-index: 10;
     }
 
     /* ── wordmark ── */
     .wordmark {
       display: flex;
       align-items: center;
-      gap: 7px;
-      padding-right: 6px;
+      gap: 8px;
+      padding-right: 4px;
     }
     .logo-icon {
-      font-size: 18px;
+      font-size: 20px;
       color: var(--accent);
     }
     .wordmark-text {
       font-family: 'Instrument Sans', sans-serif;
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 0.16em;
-      color: var(--text-secondary);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      color: var(--text-primary);
     }
 
     /* ── separator ── */
     .sep {
       width: 1px;
-      height: 22px;
+      height: 28px;
       background: var(--border);
       flex-shrink: 0;
-      margin: 0 6px;
+      margin: 0 8px;
     }
 
-    /* ── button groups ── */
-    .btn-group {
+    /* ── hero buttons (RECORD / EXPORT) ── */
+    .hero-btn {
       display: flex;
       align-items: center;
-      gap: 1px;
+      gap: 7px;
+      padding: 0 18px;
+      height: 40px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-family: 'Instrument Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.10em;
+      transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+      flex-shrink: 0;
+
+      i { font-size: 15px; }
+
+      &:disabled {
+        opacity: 0.32;
+        cursor: default;
+        pointer-events: none;
+      }
+
+      &:active:not(:disabled) { transform: scale(0.97); }
     }
 
-    /* ── base icon button ── */
-    .tb-btn {
+    /* RECORD button — solid red when idle */
+    .rec-btn {
+      background: var(--accent);
+      color: #FFFFFF;
+
+      &:hover:not(:disabled) {
+        background: var(--accent-hover);
+        box-shadow: 0 2px 10px rgba(192, 57, 43, 0.30);
+      }
+    }
+
+    /* STOP button — pulsing outline */
+    .stop-rec-btn {
+      background: rgba(192, 57, 43, 0.10);
+      color: var(--accent);
+      border: 2px solid var(--accent);
+      animation: pulse-rec 1.4s ease-in-out infinite;
+    }
+
+    /* EXPORT button — solid red */
+    .export-btn {
+      background: var(--accent);
+      color: #FFFFFF;
+
+      &:hover {
+        background: var(--accent-hover);
+        box-shadow: 0 2px 10px rgba(192, 57, 43, 0.30);
+      }
+    }
+
+    /* ── transport group ── */
+    .transport-group {
       display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .transport-btn {
+      display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      width: 32px;
-      height: 32px;
+      gap: 3px;
+      width: 52px;
+      height: 48px;
       padding: 0;
       border: none;
       background: transparent;
-      border-radius: 5px;
+      border-radius: 6px;
       cursor: pointer;
       color: var(--text-secondary);
-      transition: background 0.1s ease, color 0.1s ease;
+      transition: background 0.12s ease, color 0.12s ease;
 
-      i { font-size: 16px; }
+      i { font-size: 18px; }
 
       &:hover:not(:disabled) {
         background: var(--accent-glow);
@@ -210,25 +246,77 @@ import { take } from 'rxjs/operators';
       }
     }
 
-    /* ── pill buttons: hero actions ── */
-    .tb-pill {
+    .play-btn:hover:not(:disabled) { color: #2E7D32; }
+
+    .transport-label {
+      font-family: 'Instrument Sans', sans-serif;
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      color: inherit;
+      line-height: 1;
+    }
+
+    /* ── time display — centered, prominent ── */
+    .time-display {
       display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 5px;
-      padding: 0 13px;
-      height: 30px;
-      border-radius: 15px;
-      cursor: pointer;
+      justify-content: center;
+      padding: 6px 16px;
+      background: var(--panel-bg2);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      min-width: 168px;
+      margin: 0 4px;
+      gap: 2px;
+    }
+
+    .time-value {
+      font-family: 'DM Mono', monospace;
+      font-size: 24px;
+      font-weight: 400;
+      color: var(--time-color);
+      letter-spacing: 0.03em;
+      line-height: 1;
+    }
+
+    .processing-label {
       font-family: 'Instrument Sans', sans-serif;
       font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.13em;
-      transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-      flex-shrink: 0;
+      color: var(--text-muted);
+      font-style: italic;
+    }
 
-      i { font-size: 13px; }
+    /* ── edit group ── */
+    .edit-group {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
 
-      span { line-height: 1; }
+    .edit-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      width: 52px;
+      height: 48px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: background 0.12s ease, color 0.12s ease;
+
+      i { font-size: 17px; }
+
+      &:hover:not(:disabled) {
+        background: var(--accent-glow);
+        color: var(--text-primary);
+      }
 
       &:disabled {
         opacity: 0.28;
@@ -237,123 +325,61 @@ import { take } from 'rxjs/operators';
       }
     }
 
-    /* record pill — red, prominent */
-    .rec-pill {
-      background: rgba(192, 57, 43, 0.12);
-      color: #e25c4c;
-      border: 1px solid rgba(231, 76, 60, 0.28);
-
-      &:hover:not(:disabled) {
-        background: rgba(231, 76, 60, 0.22);
-        border-color: rgba(231, 76, 60, 0.55);
-        box-shadow: 0 0 14px rgba(231, 76, 60, 0.18);
-        color: #e74c3c;
-      }
+    .edit-label {
+      font-family: 'Instrument Sans', sans-serif;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: inherit;
+      line-height: 1;
     }
 
-    /* recording active — pulsing */
-    .rec-active-pill {
-      background: rgba(231, 76, 60, 0.2);
-      color: #e74c3c;
-      border: 1px solid rgba(231, 76, 60, 0.45);
-      animation: pulse-rec 1.4s ease-in-out infinite;
-    }
-
-    /* export pill — amber, matches accent */
-    .export-pill {
-      background: var(--accent-dim);
-      color: var(--accent);
-      border: 1px solid rgba(232, 168, 56, 0.28);
-
-      &:hover {
-        background: rgba(232, 168, 56, 0.2);
-        border-color: rgba(232, 168, 56, 0.55);
-        box-shadow: 0 0 14px rgba(232, 168, 56, 0.15);
-        color: var(--accent-hover);
-      }
-    }
-
-    /* ── specific icon button states ── */
-    .play-btn:hover:not(:disabled) i { color: #4caf50; }
-    .danger-btn:hover:not(:disabled) i { color: var(--warn); }
-
-    .snap-on {
-      background: var(--accent-dim);
-      i { color: var(--accent); }
-      &:hover { background: var(--accent-dim) !important; }
-    }
-
-    /* ── zoom ── */
-    .zoom-group {
+    /* ── project group ── */
+    .project-group {
       display: flex;
       align-items: center;
+      gap: 2px;
     }
-    .zoom-btn { width: 28px; }
-    .zoom-val {
-      font-family: 'DM Mono', monospace;
-      font-size: 10px;
-      color: var(--text-muted);
-      min-width: 54px;
-      text-align: center;
-      small { font-size: 8px; opacity: 0.55; margin-left: 1px; }
+
+    /* ── base icon button ── */
+    .tb-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: background 0.12s ease, color 0.12s ease;
+
+      i { font-size: 17px; }
+
+      &:hover:not(:disabled) {
+        background: var(--accent-glow);
+        color: var(--text-primary);
+      }
+
+      &:disabled {
+        opacity: 0.28;
+        cursor: default;
+        pointer-events: none;
+      }
+    }
+
+    .danger-btn:hover:not(:disabled) {
+      background: rgba(192, 57, 43, 0.08);
+      color: var(--accent);
     }
 
     .spacer { flex: 1; }
 
-    /* ── right status cluster ── */
-    .status-right {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .rec-badge {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-    .rec-dot {
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: #e74c3c;
-      animation: flash 0.9s ease-in-out infinite;
-    }
-    .rec-label {
-      font-family: 'DM Mono', monospace;
-      font-size: 10px;
-      font-weight: 500;
-      letter-spacing: 0.1em;
-      color: #e74c3c;
-    }
-
-    .processing {
-      font-family: 'Instrument Sans', sans-serif;
-      font-size: 11px;
-      color: var(--text-muted);
-      font-style: italic;
-    }
-
-    /* ── time clock ── */
-    .time-display {
-      font-family: 'DM Mono', monospace;
-      font-size: 20px;
-      font-weight: 300;
-      color: var(--time-color);
-      letter-spacing: 0.02em;
-      min-width: 88px;
-      text-align: right;
-      line-height: 1;
-    }
-
-    @keyframes flash {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.15; }
-    }
-
     @keyframes pulse-rec {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.35); }
-      50% { box-shadow: 0 0 0 5px rgba(231, 76, 60, 0); }
+      0%, 100% { box-shadow: 0 0 0 0 rgba(192, 57, 43, 0.30); }
+      50% { box-shadow: 0 0 0 5px rgba(192, 57, 43, 0); }
     }
   `],
 })
@@ -392,13 +418,23 @@ export class ToolbarComponent {
     this.project.setZoom(Math.max(20, this.project.state().zoom - 20));
   }
 
+  recTooltip(): string {
+    const armed = this.project.armedTrackId();
+    if (armed) {
+      const track = this.project.state().tracks.find(t => t.id === armed);
+      return `Record to ${track?.name ?? 'armed track'}`;
+    }
+    const first = this.project.state().tracks[0];
+    return first ? `Record to ${first.name} (arm a track to change target)` : 'Record from microphone';
+  }
+
   async startRecording(): Promise<void> {
-    const firstTrackId = this.project.state().tracks[0]?.id;
-    if (!firstTrackId) return;
+    const targetTrackId = this.project.armedTrackId() ?? this.project.state().tracks[0]?.id;
+    if (!targetTrackId) return;
     await this.recorder.startRecording();
     this.recorder.recorded$.pipe(take(1)).subscribe(async ({ blob, mimeType }) => {
       const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-      await this.fileService.importBlob(blob, `recording.${ext}`, firstTrackId);
+      await this.fileService.importBlob(blob, `recording.${ext}`, targetTrackId);
       this.recorder.onProcessingDone();
     });
   }
