@@ -13,6 +13,7 @@ describe('TimelineComponent', () => {
   let editActions: { cutSelection: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
+    localStorage.clear();
     editActions = { cutSelection: vi.fn().mockResolvedValue(undefined) };
 
     vi.stubGlobal('ResizeObserver', class {
@@ -617,5 +618,183 @@ describe('TimelineComponent', () => {
     // drag near t=0 — should snap to 0
     const result = (comp as any).findSnapTarget(clip1.id, 0.05, 5);
     expect(result).toBe(0);
+  });
+
+  // ── progressive disclosure ────────────────────────────────────────────────
+
+  it('showHeaders is false with a single track', () => {
+    expect(comp.showHeaders()).toBe(false);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-track-header')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.header-spacer.collapsed')).not.toBeNull();
+  });
+
+  it('showHeaders is true with two tracks and headers render', () => {
+    project.addTrack();
+    fixture.detectChanges();
+    expect(comp.showHeaders()).toBe(true);
+    expect(fixture.nativeElement.querySelectorAll('app-track-header')).toHaveLength(2);
+    expect(fixture.nativeElement.querySelector('.header-spacer.collapsed')).toBeNull();
+  });
+
+  it('add-layer button appears with content and adds a track', () => {
+    const trackId = project.state().tracks[0].id;
+    project.addClip(trackId, 'f1', 5);
+    fixture.detectChanges();
+    const btn = fixture.nativeElement.querySelector('.add-layer') as HTMLElement;
+    expect(btn).not.toBeNull();
+    btn.click();
+    fixture.detectChanges();
+    expect(project.state().tracks).toHaveLength(2);
+  });
+
+  it('add-layer button is hidden when project is empty', () => {
+    expect(fixture.nativeElement.querySelector('.add-layer')).toBeNull();
+  });
+
+  // ── zoom dock + ctrl-wheel zoom ──────────────────────────────────────────
+
+  it('zoom dock appears only with content', () => {
+    expect(fixture.nativeElement.querySelector('.zoom-dock')).toBeNull();
+    project.addClip(project.state().tracks[0].id, 'f1', 5);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.zoom-dock')).not.toBeNull();
+  });
+
+  it('zoomIn / zoomOut clamp within [20, 500]', () => {
+    project.setZoom(500);
+    comp.zoomIn();
+    expect(project.state().zoom).toBe(500);
+    project.setZoom(20);
+    comp.zoomOut();
+    expect(project.state().zoom).toBe(20);
+    comp.zoomIn();
+    expect(project.state().zoom).toBe(40);
+  });
+
+  it('onWheel with ctrl zooms in on scroll up', () => {
+    const before = project.state().zoom;
+    comp.onWheel({ ctrlKey: true, deltaY: -100, preventDefault: vi.fn() } as unknown as WheelEvent);
+    expect(project.state().zoom).toBe(Math.min(500, before + 20));
+  });
+
+  it('onWheel with ctrl zooms out on scroll down', () => {
+    const before = project.state().zoom;
+    comp.onWheel({ ctrlKey: true, deltaY: 100, preventDefault: vi.fn() } as unknown as WheelEvent);
+    expect(project.state().zoom).toBe(Math.max(20, before - 20));
+  });
+
+  it('onWheel without ctrl/meta does nothing', () => {
+    const before = project.state().zoom;
+    comp.onWheel({ ctrlKey: false, metaKey: false, deltaY: 100, preventDefault: vi.fn() } as unknown as WheelEvent);
+    expect(project.state().zoom).toBe(before);
+  });
+
+  // ── selection popover ─────────────────────────────────────────────────────
+
+  it('selection popover renders at the stored cursor position once committed', () => {
+    const trackId = project.state().tracks[0].id;
+    const clip = project.addClip(trackId, 'f1', 10, 0);
+    project.setSelection({ clipId: clip.id, start: 1, end: 3 });
+    comp.selectionOverlay = { trackId, x: 100, w: 200 };
+    comp.selPopoverPos = { x: 320, y: 140 };
+    fixture.detectChanges();
+    const pop = fixture.nativeElement.querySelector('.sel-popover') as HTMLElement;
+    expect(pop).not.toBeNull();
+    expect(pop.style.left).toBe('320px');
+    expect(pop.style.top).toBe('140px');
+  });
+
+  it('selection popover is absent while only dragging (no committed selection)', () => {
+    const trackId = project.state().tracks[0].id;
+    project.addClip(trackId, 'f1', 10, 0);
+    comp.selectionOverlay = { trackId, x: 100, w: 200 };
+    comp.selPopoverPos = { x: 320, y: 140 };
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.sel-popover')).toBeNull();
+  });
+
+  it('popover Cut button cuts the selection', () => {
+    const trackId = project.state().tracks[0].id;
+    const clip = project.addClip(trackId, 'f1', 10, 0);
+    project.setSelection({ clipId: clip.id, start: 1, end: 3 });
+    comp.selectionOverlay = { trackId, x: 100, w: 200 };
+    comp.selPopoverPos = { x: 320, y: 140 };
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.pop-cut') as HTMLElement).click();
+    expect(editActions.cutSelection).toHaveBeenCalled();
+    expect(comp.selectionOverlay).toBeNull();
+    expect(comp.selPopoverPos).toBeNull();
+  });
+
+  it('popover dismiss button clears the selection', () => {
+    const trackId = project.state().tracks[0].id;
+    const clip = project.addClip(trackId, 'f1', 10, 0);
+    project.setSelection({ clipId: clip.id, start: 1, end: 3 });
+    comp.selectionOverlay = { trackId, x: 100, w: 200 };
+    comp.selPopoverPos = { x: 320, y: 140 };
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.pop-dismiss') as HTMLElement).click();
+    expect(project.state().selection).toBeNull();
+    expect(comp.selectionOverlay).toBeNull();
+    expect(comp.selPopoverPos).toBeNull();
+    expect(editActions.cutSelection).not.toHaveBeenCalled();
+  });
+
+  it('committing a selection on mouseup anchors the popover at the cursor', () => {
+    const trackId = project.state().tracks[0].id;
+    project.addClip(trackId, 'f1', 10, 0);
+
+    const nativeEl = document.createElement('div');
+    vi.spyOn(nativeEl, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0 } as DOMRect);
+    (comp as any).containerRef = { nativeElement: nativeEl };
+
+    comp.onMouseDown({ clientX: 170, clientY: 34, buttons: 1 } as MouseEvent);
+    comp.onMouseUp({ clientX: 270, clientY: 34 } as MouseEvent);
+    expect(project.state().selection).not.toBeNull();
+    expect(comp.selPopoverPos).toEqual({ x: 270, y: 64 }); // y clamped to 64 minimum
+  });
+
+  it('popover position is clamped to the viewport edges', () => {
+    expect((comp as any).popoverPosFromEvent({ clientX: 5, clientY: 10 } as MouseEvent))
+      .toEqual({ x: 70, y: 64 });
+    expect((comp as any).popoverPosFromEvent({ clientX: 99999, clientY: 500 } as MouseEvent))
+      .toEqual({ x: window.innerWidth - 70, y: 500 });
+  });
+
+  it('dragging a new selection hides the previous popover', () => {
+    const trackId = project.state().tracks[0].id;
+    project.addClip(trackId, 'f1', 10, 0);
+
+    const nativeEl = document.createElement('div');
+    vi.spyOn(nativeEl, 'getBoundingClientRect').mockReturnValue({ left: 0, top: 0 } as DOMRect);
+    (comp as any).containerRef = { nativeElement: nativeEl };
+
+    comp.selPopoverPos = { x: 320, y: 140 };
+    comp.onMouseDown({ clientX: 170, clientY: 34, buttons: 1 } as MouseEvent);
+    comp.onMouseMove({ clientX: 220, clientY: 34, buttons: 1 } as MouseEvent);
+    expect(comp.selPopoverPos).toBeNull();
+  });
+
+  it('startHandleDrag hides the popover and release re-anchors it', () => {
+    const trackId = project.state().tracks[0].id;
+    const clip = project.addClip(trackId, 'f1', 10, 0);
+    project.setSelection({ clipId: clip.id, start: 1, end: 3 });
+    comp.selectionOverlay = { trackId, x: 100, w: 200 };
+    comp.selPopoverPos = { x: 320, y: 140 };
+
+    comp.startHandleDrag({ stopPropagation: vi.fn() } as unknown as MouseEvent, 'end');
+    expect(comp.selPopoverPos).toBeNull();
+
+    comp.onMouseUp({ clientX: 400, clientY: 100 } as MouseEvent);
+    expect(comp.selPopoverPos).toEqual({ x: 400, y: 100 });
+  });
+
+  it('playhead is drawn with the lane inset offset', () => {
+    project.setPlayhead(2); // zoom 100 → 200px
+    fixture.detectChanges();
+    const playhead = fixture.nativeElement.querySelector('.playhead') as HTMLElement;
+    // headerWidth (0 in jsdom) + laneInset 9 + 200
+    expect(playhead.style.left).toBe(`${comp.headerWidth() + 9 + 200}px`);
   });
 });

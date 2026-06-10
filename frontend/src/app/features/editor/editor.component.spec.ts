@@ -3,6 +3,7 @@ import { of } from 'rxjs';
 import { signal, WritableSignal } from '@angular/core';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { EditorComponent } from './editor.component';
+import { ProjectService } from '../../core/services/project.service';
 import { RecorderService } from '../../core/services/recorder.service';
 import { PlaybackService } from '../../core/services/playback.service';
 import { ApiService } from '../../core/services/api.service';
@@ -13,7 +14,8 @@ import { MatDialog } from '@angular/material/dialog';
 describe('EditorComponent', () => {
   let fixture: ReturnType<typeof TestBed.createComponent<EditorComponent>>;
   let comp: EditorComponent;
-  let fileService: { importFile: ReturnType<typeof vi.fn> };
+  let project: ProjectService;
+  let fileService: { importFile: ReturnType<typeof vi.fn>; importBlob: ReturnType<typeof vi.fn> };
   let playback: { isPlaying: ReturnType<typeof vi.fn>; play: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> };
   let api: { sessionCleanup: ReturnType<typeof vi.fn> };
   let dialog: { open: ReturnType<typeof vi.fn> };
@@ -21,6 +23,8 @@ describe('EditorComponent', () => {
   let recorderState: WritableSignal<string>;
 
   beforeEach(async () => {
+    localStorage.clear();
+
     vi.stubGlobal('ResizeObserver', class {
       observe = vi.fn();
       disconnect = vi.fn();
@@ -29,13 +33,17 @@ describe('EditorComponent', () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
       scale: vi.fn(), clearRect: vi.fn(), fillRect: vi.fn(),
       beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(),
-      stroke: vi.fn(), fillText: vi.fn(),
+      stroke: vi.fn(), fill: vi.fn(), arc: vi.fn(), fillText: vi.fn(), save: vi.fn(), restore: vi.fn(),
       createLinearGradient: vi.fn().mockReturnValue({ addColorStop: vi.fn() }),
       fillStyle: '', strokeStyle: '', lineWidth: 1, font: '',
+      shadowBlur: 0, shadowColor: '', textBaseline: '',
     } as unknown as CanvasRenderingContext2D);
 
     recorderState = signal('idle');
-    fileService = { importFile: vi.fn().mockResolvedValue(undefined) };
+    fileService = {
+      importFile: vi.fn().mockResolvedValue(undefined),
+      importBlob: vi.fn().mockResolvedValue(undefined),
+    };
     playback = {
       isPlaying: vi.fn().mockReturnValue(false),
       play: vi.fn().mockResolvedValue(undefined),
@@ -54,7 +62,7 @@ describe('EditorComponent', () => {
           useValue: {
             state: recorderState,
             analyserNode: signal(null),
-            startRecording: vi.fn(),
+            startRecording: vi.fn().mockResolvedValue(undefined),
             stopRecording: vi.fn(),
             recorded$: { pipe: vi.fn().mockReturnValue({ subscribe: vi.fn() }) },
             onProcessingDone: vi.fn(),
@@ -70,6 +78,7 @@ describe('EditorComponent', () => {
 
     fixture = TestBed.createComponent(EditorComponent);
     comp = fixture.componentInstance;
+    project = TestBed.inject(ProjectService);
     fixture.detectChanges();
   });
 
@@ -110,13 +119,7 @@ describe('EditorComponent', () => {
     expect(fileService.importFile).toHaveBeenCalledWith(file);
   });
 
-  it('openExport opens export dialog', async () => {
-    await comp.openExport();
-    expect(dialog.open).toHaveBeenCalled();
-  });
-
   it('onVeDrop skips undefined entries in FileList', async () => {
-    // Build a FileList-like with one defined + one undefined
     const file1 = new File(['x'], 'a.wav');
     const files = { 0: file1, 1: undefined, length: 2 };
     await comp.onVeDrop(new CustomEvent('ve-drop', { detail: { files } }));
@@ -124,25 +127,14 @@ describe('EditorComponent', () => {
     expect(fileService.importFile).toHaveBeenCalledTimes(1);
   });
 
-  it('shows recording overlay when recorder state is recording', () => {
-    recorderState.set('recording');
-    fixture.detectChanges();
-    const overlay = fixture.nativeElement.querySelector('.recording-overlay');
-    expect(overlay).not.toBeNull();
+  it('openExport opens export dialog', async () => {
+    await comp.openExport();
+    expect(dialog.open).toHaveBeenCalled();
   });
 
   it('onBeforeUnload calls sessionCleanup', () => {
     (comp as any).onBeforeUnload();
     expect(api.sessionCleanup).toHaveBeenCalled();
-  });
-
-  it('status bar shows plural "tracks" with multiple tracks', async () => {
-    const { ProjectService } = await import('../../core/services/project.service');
-    const project = TestBed.inject(ProjectService);
-    project.addTrack();
-    fixture.detectChanges();
-    const el = fixture.nativeElement as HTMLElement;
-    expect(el.textContent).toContain('tracks');
   });
 
   it('ngOnDestroy removes beforeunload listener', () => {
@@ -154,16 +146,123 @@ describe('EditorComponent', () => {
   it('ve-drop event calls onVeDrop via DOM', async () => {
     const file = new File(['x'], 'audio.wav');
     const el = fixture.nativeElement.querySelector('.editor-root') as HTMLElement;
-    if (el) {
-      el.dispatchEvent(new CustomEvent('ve-drop', { detail: { files: [file] }, bubbles: true }));
-    }
+    el.dispatchEvent(new CustomEvent('ve-drop', { detail: { files: [file] }, bubbles: true }));
     await new Promise(r => setTimeout(r, 5));
     expect(fileService.importFile).toHaveBeenCalled();
   });
 
   it('click on editor-root calls onInteraction via DOM', () => {
     const el = fixture.nativeElement.querySelector('.editor-root') as HTMLElement;
-    if (el) { el.click(); fixture.detectChanges(); }
+    el.click();
+    fixture.detectChanges();
     expect(audioCtx.resume).toHaveBeenCalled();
+  });
+
+  // ── hero empty state ──────────────────────────────────────────────────────
+
+  it('shows the hero when the project is empty and idle', () => {
+    expect(comp.showHero()).toBe(true);
+    expect(fixture.nativeElement.querySelector('.hero')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.hero-rec')).not.toBeNull();
+  });
+
+  it('hides the hero once a clip exists', () => {
+    project.addClip(project.state().tracks[0].id, 'f1', 5);
+    fixture.detectChanges();
+    expect(comp.showHero()).toBe(false);
+    expect(fixture.nativeElement.querySelector('.hero')).toBeNull();
+  });
+
+  it('hides the hero while recording', () => {
+    recorderState.set('recording');
+    fixture.detectChanges();
+    expect(comp.showHero()).toBe(false);
+    expect(fixture.nativeElement.querySelector('.hero')).toBeNull();
+  });
+
+  it('parks the transport pill while the hero is visible', () => {
+    const pill = fixture.nativeElement.querySelector('app-transport-pill') as HTMLElement;
+    expect(pill.classList.contains('pill-parked')).toBe(true);
+  });
+
+  it('un-parks the transport pill once content exists', () => {
+    project.addClip(project.state().tracks[0].id, 'f1', 5);
+    fixture.detectChanges();
+    const pill = fixture.nativeElement.querySelector('app-transport-pill') as HTMLElement;
+    expect(pill.classList.contains('pill-parked')).toBe(false);
+  });
+
+  it('shows corner actions only when the project has content', () => {
+    expect(fixture.nativeElement.querySelector('app-corner-actions')).toBeNull();
+    project.addClip(project.state().tracks[0].id, 'f1', 5);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-corner-actions')).not.toBeNull();
+  });
+
+  it('hero record button starts recording through the pill', () => {
+    const spy = vi.spyOn(comp.pill!, 'startRecording').mockResolvedValue(undefined);
+    (fixture.nativeElement.querySelector('.hero-rec') as HTMLElement).click();
+    expect(spy).toHaveBeenCalled();
+  });
+
+  it('startFirstRecording tolerates a missing pill reference', () => {
+    comp.pill = undefined;
+    expect(() => comp.startFirstRecording()).not.toThrow();
+  });
+
+  // ── browse ────────────────────────────────────────────────────────────────
+
+  it('browse opens a file picker and imports the chosen file', () => {
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+    const origCreate = document.createElement.bind(document);
+    let inputEl: HTMLInputElement | undefined;
+    vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
+      const el = origCreate(tag);
+      if (tag === 'input') inputEl = el as HTMLInputElement;
+      return el;
+    }) as typeof document.createElement);
+
+    comp.browse();
+    expect(clickSpy).toHaveBeenCalled();
+
+    const file = new File(['x'], 'a.wav');
+    Object.defineProperty(inputEl!, 'files', { value: [file] });
+    inputEl!.onchange!(new Event('change'));
+    expect(fileService.importFile).toHaveBeenCalledWith(file);
+  });
+
+  it('browse does nothing when no file is chosen', () => {
+    vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(() => {});
+    const origCreate = document.createElement.bind(document);
+    let inputEl: HTMLInputElement | undefined;
+    vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
+      const el = origCreate(tag);
+      if (tag === 'input') inputEl = el as HTMLInputElement;
+      return el;
+    }) as typeof document.createElement);
+
+    comp.browse();
+    Object.defineProperty(inputEl!, 'files', { value: null });
+    inputEl!.onchange!(new Event('change'));
+    expect(fileService.importFile).not.toHaveBeenCalled();
+  });
+
+  // ── recording timer ───────────────────────────────────────────────────────
+
+  it('recElapsedFormatted starts at 00:00', () => {
+    expect(comp.recElapsedFormatted()).toBe('00:00');
+  });
+
+  it('recording timer ticks elapsed seconds and resets when stopped', () => {
+    vi.useFakeTimers();
+    recorderState.set('recording');
+    fixture.detectChanges();
+    vi.advanceTimersByTime(2100);
+    expect(comp.recElapsedFormatted()).toBe('00:02');
+
+    recorderState.set('idle');
+    fixture.detectChanges();
+    expect(comp.recElapsedFormatted()).toBe('00:00');
+    vi.useRealTimers();
   });
 });

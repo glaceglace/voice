@@ -26,6 +26,11 @@ interface ClipDragState {
 
 const SNAP_PX = 12;
 
+// Horizontal offset of lane content inside the scroll container:
+// 8px .track-row margin-left + 1px .track-row border. The playhead, the
+// ruler, and hit-testing must all account for it or they drift from clips.
+const LANE_INSET = 9;
+
 export const TRACK_COLORS = [
   '#4a90d9', '#d97a3a', '#3daa6a', '#d94848', '#8e5cd4', '#2a9e8a',
   '#d4844a', '#3690c8', '#6f9e3a', '#7a50c4',
@@ -38,29 +43,13 @@ export const TRACK_COLORS = [
   template: `
     <!-- ruler lives outside the scroll container so it never moves with content -->
     <div class="ruler-row">
-      <div class="header-spacer" #headerSpacer></div>
+      <div class="header-spacer" #headerSpacer [class.collapsed]="!showHeaders()"></div>
       <div class="ruler-wrap">
         <app-timeline-ruler
           [zoom]="project.state().zoom"
           [scrollLeft]="scrollLeft()"
           [totalDuration]="project.totalDuration()"
         />
-      </div>
-      <!-- zoom + snap controls inline with ruler -->
-      <div class="ruler-controls">
-        <button class="ruler-ctrl-btn" matTooltip="Zoom out" (click)="zoomOut()">
-          <i class="ph-light ph-magnifying-glass-minus"></i>
-        </button>
-        <span class="ruler-zoom-val">{{ project.state().zoom }}<small>px/s</small></span>
-        <button class="ruler-ctrl-btn" matTooltip="Zoom in" (click)="zoomIn()">
-          <i class="ph-light ph-magnifying-glass-plus"></i>
-        </button>
-        <div class="ruler-ctrl-sep"></div>
-        <button class="ruler-ctrl-btn" [class.snap-active]="project.snapEnabled()"
-          [matTooltip]="project.snapEnabled() ? 'Snap on — click to disable' : 'Snap off — click to enable'"
-          (click)="project.toggleSnap()">
-          <i class="ph-light" [class.ph-magnet]="project.snapEnabled()" [class.ph-magnet-straight]="!project.snapEnabled()"></i>
-        </button>
       </div>
     </div>
 
@@ -74,22 +63,25 @@ export const TRACK_COLORS = [
       (contextmenu)="onContextMenu($event)"
       (dragover)="$event.preventDefault()"
       (drop)="onDrop($event)"
+      (wheel)="onWheel($event)"
     >
 
       <!-- track rows -->
       @for (track of project.state().tracks; track track.id; let i = $index) {
         <div class="track-row" [style.min-width.px]="headerWidth() + timelineWidth()">
 
-          <!-- sticky track header -->
-          <div class="track-header-wrap">
-            <app-track-header
-              [track]="track"
-              [color]="trackColor(i)"
-              [trackIndex]="i"
-              (amplitudeScaleChange)="setAmplitudeScale(track.id, $event)"
-              (headerContextMenu)="onTrackHeaderContextMenu($event, track.id)"
-            />
-          </div>
+          <!-- sticky track header — only shown once a second layer exists -->
+          @if (showHeaders()) {
+            <div class="track-header-wrap">
+              <app-track-header
+                [track]="track"
+                [color]="trackColor(i)"
+                [trackIndex]="i"
+                (amplitudeScaleChange)="setAmplitudeScale(track.id, $event)"
+                (headerContextMenu)="onTrackHeaderContextMenu($event, track.id)"
+              />
+            </div>
+          }
 
           <!-- clips area -->
           <div class="clips-area" [style.min-width.px]="timelineWidth()">
@@ -152,23 +144,16 @@ export const TRACK_COLORS = [
         </div>
       }
 
-      <!-- empty full-page hint if no tracks have clips -->
-      @if (allEmpty()) {
-        <div class="full-empty">
-          <i class="ph-light ph-microphone empty-icon"></i>
-          <p class="empty-heading">Ready to record</p>
-          <p class="empty-sub">Arm a track (●), then hit <strong>REC</strong> — or drop an audio file here</p>
-          <div class="empty-shortcuts">
-            <span class="shortcut-chip"><kbd>Space</kbd> Play / Pause</span>
-            <span class="shortcut-chip"><kbd>Ctrl+Z</kbd> Undo</span>
-            <span class="shortcut-chip"><kbd>Ctrl+X</kbd> Cut selection</span>
-            <span class="shortcut-chip"><kbd>Alt+drag</kbd> Move clip</span>
-          </div>
-        </div>
+      <!-- ghost lane: quiet doorway into multi-layer editing -->
+      @if (!allEmpty()) {
+        <button class="add-layer" (click)="project.addTrack()">
+          <i class="ph-light ph-plus"></i>
+          <span>Add a layer</span>
+        </button>
       }
 
       <!-- playhead line -->
-      <div class="playhead" [style.left.px]="headerWidth() + playheadPx()"></div>
+      <div class="playhead" [style.left.px]="headerWidth() + laneInset + playheadPx()"></div>
     </div>
 
     <!-- custom horizontal scrollbar (outside the scroll container so it never affects layout) -->
@@ -179,6 +164,41 @@ export const TRACK_COLORS = [
         (mousedown)="onHScrollThumbMousedown($event)"
       ></div>
     </div>
+
+    <!-- floating zoom / snap dock, bottom-right -->
+    @if (!allEmpty()) {
+      <div class="zoom-dock">
+        <button class="dock-btn" matTooltip="Zoom out (Ctrl+scroll)" (click)="zoomOut()">
+          <i class="ph-light ph-magnifying-glass-minus"></i>
+        </button>
+        <button class="dock-btn" matTooltip="Zoom in (Ctrl+scroll)" (click)="zoomIn()">
+          <i class="ph-light ph-magnifying-glass-plus"></i>
+        </button>
+        <div class="dock-sep"></div>
+        <button class="dock-btn" [class.snap-active]="project.snapEnabled()"
+          [matTooltip]="project.snapEnabled() ? 'Snap on — click to disable' : 'Snap off — click to enable'"
+          (click)="project.toggleSnap()">
+          <i class="ph-light" [class.ph-magnet]="project.snapEnabled()" [class.ph-magnet-straight]="!project.snapEnabled()"></i>
+        </button>
+      </div>
+    }
+
+    <!-- contextual popover: appears at the cursor once a selection is committed -->
+    @if (project.state().selection && selPopoverPos) {
+      <div class="sel-popover"
+        [style.left.px]="selPopoverPos.x"
+        [style.top.px]="selPopoverPos.y"
+        (mousedown)="$event.stopPropagation()"
+      >
+        <button class="pop-btn pop-cut" (click)="cutFromPopover()">
+          <i class="ph-light ph-scissors"></i>
+          <span>Cut</span>
+        </button>
+        <button class="pop-btn pop-dismiss" matTooltip="Keep it — clear selection" (click)="dismissSelection()">
+          <i class="ph-light ph-x"></i>
+        </button>
+      </div>
+    }
 
     <!-- context menu -->
     @if (contextMenuVisible) {
@@ -231,31 +251,38 @@ export const TRACK_COLORS = [
       flex-shrink: 0;
       background: var(--panel-bg);
       border-right: 1px solid var(--border);
-    }
-    .ruler-wrap { flex: 1; overflow: hidden; }
 
-    /* ── ruler zoom/snap controls ── */
-    .ruler-controls {
-      display: flex;
-      align-items: center;
-      gap: 1px;
-      padding: 0 6px;
-      flex-shrink: 0;
-      border-left: 1px solid var(--border);
+      /* single-layer mode: no header column at all */
+      &.collapsed {
+        width: 0;
+        min-width: 0;
+        border-right: none;
+      }
     }
-    .ruler-ctrl-btn {
+    /* margin keeps ruler ticks aligned with lane content (LANE_INSET) */
+    .ruler-wrap { flex: 1; overflow: hidden; margin-left: 9px; }
+
+    /* ── floating zoom/snap dock ── */
+    .zoom-dock {
+      position: absolute;
+      bottom: 28px;
+      right: 20px;
+      z-index: 40;
       display: flex;
       align-items: center;
-      justify-content: center;
-      width: 26px;
-      height: 26px;
-      border: none;
+      gap: 2px;
+      padding: 4px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      box-shadow: 0 6px 18px rgba(26, 25, 21, 0.10);
+    }
+    .dock-btn {
+      width: 30px;
+      height: 30px;
       background: transparent;
-      border-radius: 4px;
-      cursor: pointer;
       color: var(--text-secondary);
-      transition: background 0.12s, color 0.12s;
-      i { font-size: 13px; }
+      i { font-size: 14px; }
       &:hover { background: var(--accent-glow); color: var(--text-primary); }
     }
     .snap-active {
@@ -263,15 +290,7 @@ export const TRACK_COLORS = [
       i { color: var(--accent); }
       &:hover { background: var(--accent-dim) !important; color: var(--accent) !important; }
     }
-    .ruler-zoom-val {
-      font-family: 'DM Mono', monospace;
-      font-size: 10px;
-      color: var(--text-muted);
-      min-width: 50px;
-      text-align: center;
-      small { font-size: 8px; opacity: 0.6; margin-left: 1px; }
-    }
-    .ruler-ctrl-sep {
+    .dock-sep {
       width: 1px;
       height: 16px;
       background: var(--border);
@@ -494,66 +513,86 @@ export const TRACK_COLORS = [
       opacity: 0.8;
     }
 
-    /* ── full empty state ── */
-    .full-empty {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      color: var(--text-muted);
-      font-family: 'Instrument Sans', sans-serif;
-      font-size: 13px;
-      letter-spacing: 0.02em;
-      p { margin: 0; }
-      strong { color: var(--accent); font-weight: 500; }
-    }
-    .empty-icon {
-      font-size: 44px;
-      color: var(--text-muted);
-      margin-bottom: 4px;
-    }
-    .empty-heading {
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      letter-spacing: 0.03em;
-    }
-    .empty-sub {
-      font-size: 12px;
-      color: var(--text-muted);
-      max-width: 320px;
-      text-align: center;
-      line-height: 1.6;
-    }
-    .empty-shortcuts {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      justify-content: center;
-      margin-top: 8px;
-    }
-    .shortcut-chip {
+    /* ── selection popover — fixed, floats above the cursor ── */
+    .sel-popover {
+      position: fixed;
+      transform: translate(-50%, calc(-100% - 12px));
+      z-index: 80;
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 4px;
+      padding: 4px;
       background: var(--panel-bg);
       border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 3px 8px;
-      font-size: 10px;
-      color: var(--text-muted);
-      letter-spacing: 0.04em;
+      border-radius: 999px;
+      box-shadow: 0 8px 22px rgba(26, 25, 21, 0.16);
+    }
 
-      kbd {
-        font-family: 'DM Mono', monospace;
-        font-size: 9px;
-        background: var(--panel-bg2);
-        border: 1px solid var(--border-strong);
-        border-radius: 3px;
-        padding: 1px 4px;
-        color: var(--text-secondary);
+    .pop-btn, .dock-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.1s, color 0.1s;
+    }
+
+    .pop-btn {
+      gap: 5px;
+      height: 28px;
+      padding: 0 12px;
+      font-family: 'Instrument Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      i { font-size: 13px; }
+    }
+
+    .pop-cut {
+      background: var(--accent);
+      color: #FFFFFF;
+      &:hover { background: var(--accent-hover); }
+    }
+
+    .pop-dismiss {
+      width: 28px;
+      padding: 0;
+      background: transparent;
+      color: var(--text-muted);
+      &:hover { background: var(--panel-bg2); color: var(--text-primary); }
+    }
+
+    /* ── ghost add-layer lane ── */
+    .add-layer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      flex-shrink: 0;
+      height: 44px;
+      margin: 2px 8px 90px 8px;
+      border: 1px dashed var(--border-strong);
+      border-radius: 8px;
+      background: transparent;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-family: 'Instrument Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.03em;
+      opacity: 0.55;
+      transition: all 0.15s;
+      position: sticky;
+      left: 8px;
+      width: calc(100vw - 32px);
+
+      i { font-size: 14px; }
+
+      &:hover {
+        opacity: 1;
+        border-color: var(--accent);
+        color: var(--accent);
+        background: var(--accent-glow);
       }
     }
 
@@ -618,7 +657,10 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
   readonly headerWidth = signal(168);
   readonly altKeyDown = signal(false);
   selectionOverlay: { trackId: string; x: number; w: number } | null = null;
+  selPopoverPos: { x: number; y: number } | null = null;
   clipDrag: ClipDragState | null = null;
+
+  readonly laneInset = LANE_INSET;
 
   contextMenuVisible = false;
   contextMenuPosition = { x: 0, y: 0 };
@@ -682,6 +724,9 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
     this.project.state().tracks.every(t => t.clips.length === 0)
   );
 
+  // Progressive disclosure: the header column only exists once there are 2+ layers.
+  readonly showHeaders = computed(() => this.project.state().tracks.length > 1);
+
   get selectionDuration(): number {
     if (!this.selectionOverlay) return 0;
     return this.selectionOverlay.w / this.project.state().zoom;
@@ -705,6 +750,25 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
 
   zoomOut(): void {
     this.project.setZoom(Math.max(20, this.project.state().zoom - 20));
+  }
+
+  onWheel(e: WheelEvent): void {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    if (e.deltaY < 0) this.zoomIn();
+    else this.zoomOut();
+  }
+
+  cutFromPopover(): void {
+    void this.editActions.cutSelection();
+    this.selectionOverlay = null;
+    this.selPopoverPos = null;
+  }
+
+  dismissSelection(): void {
+    this.project.setSelection(null);
+    this.selectionOverlay = null;
+    this.selPopoverPos = null;
   }
 
   ngOnInit(): void {
@@ -899,6 +963,7 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
 
     if (this.selectStart) {
       // Selection drag: update overlay only — no setPlayhead to avoid signal churn on every mousemove
+      this.selPopoverPos = null;
       const zoom = this.project.state().zoom;
       const x0 = this.selectStart.timeStart * zoom;
       const x1 = time * zoom;
@@ -915,6 +980,10 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   onMouseUp(e: MouseEvent): void {
+    // Releasing a handle-resize: re-anchor the popover at the cursor
+    if (this.handleDragSide && this.project.state().selection) {
+      this.selPopoverPos = this.popoverPosFromEvent(e);
+    }
     this.handleDragSide = null;
 
     if (this.clipDrag) {
@@ -939,6 +1008,7 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
           const start = Math.min(this.selectStart.timeStart, time);
           const end = Math.max(this.selectStart.timeStart, time);
           this.project.setSelection({ clipId, start, end });
+          this.selPopoverPos = this.popoverPosFromEvent(e);
         }
       }
       this.selectStart = null;
@@ -948,6 +1018,16 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
   startHandleDrag(e: MouseEvent, side: 'start' | 'end'): void {
     e.stopPropagation();
     this.handleDragSide = side;
+    // Hide the popover while resizing; it re-anchors at the cursor on release
+    this.selPopoverPos = null;
+  }
+
+  private popoverPosFromEvent(e: MouseEvent): { x: number; y: number } {
+    // Clamp so the pill (rendered above and centered on the cursor) stays on screen
+    return {
+      x: Math.min(Math.max(e.clientX, 70), window.innerWidth - 70),
+      y: Math.max(e.clientY, 64),
+    };
   }
 
   onContextMenu(e: MouseEvent): void {
@@ -1149,7 +1229,7 @@ export class TimelineComponent implements OnInit, AfterViewInit, OnDestroy {
     const container = this.containerRef?.nativeElement;
     if (!container) return { trackId: null, time: 0 };
     const rect = container.getBoundingClientRect();
-    const x = e.clientX - rect.left + this.scrollLeft() - this.headerWidth();
+    const x = e.clientX - rect.left + this.scrollLeft() - this.headerWidth() - LANE_INSET;
     const y = e.clientY - rect.top + container.scrollTop;
     const time = Math.max(0, x / this.project.state().zoom);
     const trackIndex = Math.floor(y / this.getTrackHeight());

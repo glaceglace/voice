@@ -49,19 +49,27 @@ Backend env config: copy `backend/.env.example` → `backend/.env` before first 
 - `EditActionsService` — cut/trim logic; determines which of 4 split cases applies, calls `ApiService`, updates state, re-fetches peaks at correct resolution
 - `ApiService` — all HTTP to the backend (`/api/audio/*`)
 
-**Component hierarchy:**
+**Component hierarchy ("contextual canvas" UX — no toolbar, floating controls):**
 ```
-EditorComponent
-  ├── ToolbarComponent       (transport controls, zoom, undo, export, new-project)
-  └── TimelineComponent      (core DAW canvas — drag/select/context-menu/auto-scroll)
-        ├── TrackHeaderComponent  (per-track controls: mute/solo/import/delete)
-        ├── WaveformCanvasComponent  (canvas peak rendering per clip)
-        └── ContextMenuComponent
+EditorComponent              (full-bleed canvas, hero empty state, wordmark chip)
+  ├── TimelineComponent      (core canvas — drag/select/context-menu/auto-scroll,
+  │     │                     selection popover, ghost "Add a layer" lane,
+  │     │                     floating zoom/snap dock, Ctrl+wheel zoom)
+  │     ├── TrackHeaderComponent  (per-track controls; only rendered with 2+ tracks)
+  │     ├── WaveformCanvasComponent  (canvas peak rendering per clip)
+  │     └── ContextMenuComponent
+  ├── TransportPillComponent (floating bottom-center pill: rewind/play/time/record;
+  │                           morphs into a live recording pill with oscilloscope)
+  └── CornerActionsComponent (floating top-right: undo chip, ⋯ menu, Export)
 ```
 
-`TimelineComponent` owns all mouse hit-testing, drag-to-select, handle drag, keyboard shortcuts (Ctrl+Z undo, Ctrl+X cut, spacebar play/pause, arrows seek, Delete), and an `autoScrollEffect` that keeps the playhead visible during playback. Each track row is `TRACK_HEIGHT = 160 px` tall; this constant is also used in the hit-test formula `floor((y - rulerH) / TRACK_HEIGHT)`.
+`TimelineComponent` owns all mouse hit-testing, drag-to-select, handle drag, keyboard shortcuts (Ctrl+Z undo, Ctrl+X cut, spacebar play/pause, arrows seek, Delete), and an `autoScrollEffect` that keeps the playhead visible during playback. Track row height is measured at runtime from the rendered `.track-row` element for hit-testing.
 
-`TrackHeaderComponent` injects both `ProjectService` and `FileService`. Its import button triggers a file picker scoped to that track's ID. Delete and the toolbar's "New project" button both gate on `window.confirm()` before mutating state.
+Progressive disclosure: with a single track there is no header column (`showHeaders` computed; the ruler's header spacer collapses). When the project is empty, `EditorComponent` shows a hero record button instead of any chrome; the transport pill is CSS-parked (`.pill-parked`) but stays in the DOM so the hero button can call `pill.startRecording()` via `ViewChild`.
+
+`TrackHeaderComponent` injects both `ProjectService` and `FileService`. Its import button triggers a file picker scoped to that track's ID. Track delete and corner-actions "Start over" both gate on `window.confirm()` before mutating state.
+
+Zoneless gotcha: anything read in a template `@if` must be signal-backed or tests throw NG0100 — `ProjectService.canUndo()` wraps a `_canUndo` signal and `CornerActionsComponent.menuVisible` is a signal for this reason.
 
 ### Backend Architecture
 

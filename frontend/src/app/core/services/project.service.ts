@@ -10,6 +10,8 @@ const STORAGE_KEY = 'voice-editor-project';
 export class ProjectService {
   private _state = signal<ProjectState>(this.loadFromStorage() ?? defaultProjectState());
   private _history: ProjectState[] = [];
+  // Signal mirror of history length so templates reading canUndo() are reactive.
+  private readonly _canUndo = signal(false);
   private _saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly snapEnabled = signal(true);
@@ -41,6 +43,7 @@ export class ProjectService {
 
   private save(): void {
     this._history = [...this._history.slice(-(MAX_HISTORY - 1)), structuredClone(this._state())];
+    this._canUndo.set(true);
   }
 
   private mutate(updater: (s: ProjectState) => ProjectState): void {
@@ -248,14 +251,16 @@ export class ProjectService {
   undo(): void {
     const prev = this._history.pop();
     if (prev) this._state.set(prev);
+    this._canUndo.set(this._history.length > 0);
   }
 
   canUndo(): boolean {
-    return this._history.length > 0;
+    return this._canUndo();
   }
 
   reset(): void {
     this._history = [];
+    this._canUndo.set(false);
     this._state.set(defaultProjectState());
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
   }
